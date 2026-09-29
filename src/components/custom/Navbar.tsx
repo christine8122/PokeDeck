@@ -23,33 +23,51 @@ const navLinks = [
 export default function Navbar() {
   const pathname = usePathname();
   const [loggedIn, setLoggedIn] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
     const supabase = createClient();
-
-    supabase.auth.getSession().then(({ data, error }) => {
-      setLoggedIn(!error && data.session !== null);
-    });
+    let mounted = true;
+    let authChanged = false;
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+
+      authChanged = true;
       setLoggedIn(session !== null);
+      setAuthLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted || authChanged) return;
+
+      setLoggedIn(!error && data.session !== null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   return (
     <nav className="border-b border-border bg-white">
       <div className="flex h-16 w-full items-center px-8 py-10">
+        {/* PokéDecks Logo */}
         <Link href="/" className="flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg border">
             ⭐
           </span>
-          <span className="text-left text-4xl font-large">PokéDecks</span>
+
+          <span className="text-left text-4xl font-bold">
+            PokéDecks
+          </span>
         </Link>
 
+        {/* Navigation Links */}
         <div className="ml-auto flex items-center gap-3">
           {navLinks.map((link) => {
             const isActive = pathname === link.href;
@@ -71,21 +89,22 @@ export default function Navbar() {
             );
           })}
 
-          {loggedIn ? (
-            <LogoutButton />
-          ) : (
-            <Link
-              href="/auth/login"
-              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-lg font-medium transition-colors ${
-                pathname === "/auth/login"
-                  ? "bg-black text-white"
-                  : "text-foreground hover:bg-gray-100"
-              }`}
-            >
-              <LogIn className="h-4 w-4" />
-              Login
-            </Link>
-          )}
+          {!authLoading &&
+            (loggedIn ? (
+              <LogoutButton />
+            ) : (
+              <Link
+                href="/auth/login"
+                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-lg font-medium transition-colors ${
+                  pathname === "/auth/login"
+                    ? "bg-black text-white"
+                    : "text-foreground hover:bg-gray-100"
+                }`}
+              >
+                <LogIn className="h-4 w-4" />
+                Login
+              </Link>
+            ))}
         </div>
       </div>
     </nav>
