@@ -14,18 +14,18 @@ import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   return (
-    <main className="flex justify-center px-6 pt-16">
+    <main className="flex min-h-[calc(100vh-64px)] items-center justify-center px-6">
 
       {/* Login Card */}
-      <Card className="w-full max-w-md  min-h-[500px]py-10">
+      <Card className="min-h-[520px] w-full max-w-lg py-10">
 
         {/* Card Header */}
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl">
+          <CardTitle className="text-4xl font-semibold">
             Log in
           </CardTitle>
 
-          <CardDescription>
+          <CardDescription className="text-base">
             Welcome back, trainer.
           </CardDescription>
         </CardHeader>
@@ -36,7 +36,10 @@ export default function LoginPage() {
 
             {/* Email */}
             <div className="space-y-2">
-              <Label htmlFor="email">
+              <Label
+                htmlFor="email"
+                className="text-base"
+              >
                 Email
               </Label>
 
@@ -44,6 +47,7 @@ export default function LoginPage() {
                 id="email"
                 type="email"
                 placeholder="you@example.com"
+                className="h-12 px-4 text-base"
               />
             </div>
 
@@ -51,13 +55,16 @@ export default function LoginPage() {
             <div className="space-y-2">
 
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">
+                <Label
+                  htmlFor="password"
+                  className="text-base"
+                >
                   Password
                 </Label>
 
                 <Link
                   href="/forgot-password"
-                  className="text-sm text-red-700 text-muted-foreground hover:underline"
+                  className="text-base text-red-700 hover:underline"
                 >
                   Forgot Password?
                 </Link>
@@ -67,6 +74,7 @@ export default function LoginPage() {
                 id="password"
                 type="password"
                 placeholder="Enter your password"
+                className="h-12 px-4 text-base"
               />
 
             </div>
@@ -75,7 +83,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               size="lg"
-              className="w-full bg-yellow-400 text-black hover:bg-yellow-500"
+              className="h-12 w-full bg-yellow-400 text-base font-semibold text-black hover:bg-yellow-500"
             >
               Log in
             </Button>
@@ -84,12 +92,12 @@ export default function LoginPage() {
         </CardContent>
 
         {/* Create Account */}
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
-            Don't have an account?{" "}
+        <CardFooter className="justify-center border-t-0 bg-transparent">
+          <p className="text-base text-muted-foreground">
+            Don&apos;t have an account?{" "}
             <Link
               href="/signup"
-              className="font-medium text-red-700 text-foreground hover:underline"
+              className="font-medium text-red-700 hover:underline"
             >
               Create Account
             </Link>
@@ -97,6 +105,7 @@ export default function LoginPage() {
         </CardFooter>
 
       </Card>
+
     </main>
   );
 }
