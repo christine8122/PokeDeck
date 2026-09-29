@@ -42,6 +42,8 @@ export async function updateSession(request: NextRequest) {
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
     !request.nextUrl.pathname.startsWith('/auth') &&
+    // don't redirect on /, that's just the "advertising" / landing point
+    request.nextUrl.pathname !== "/" &&
     // the OAuth consent route sends unauthenticated visitors to the login page
     // itself, so that it can preserve the authorization in the `next` parameter
     request.nextUrl.pathname !== '/oauth/consent'
@@ -49,6 +51,8 @@ export async function updateSession(request: NextRequest) {
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
+    // return the user back to the url that they got redirected to login from
+    url.searchParams.set("next", request.nextUrl.pathname)
     return NextResponse.redirect(url)
   }
 
