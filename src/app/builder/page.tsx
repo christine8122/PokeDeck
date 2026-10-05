@@ -6,6 +6,7 @@ import { Check, Plus, Save, Search, X } from "lucide-react";
 import Container from "@/components/custom/Container";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
+import TCGdex, { CardModel, CardResume } from "@tcgdex/sdk";
 
 // ---- Placeholder data ----
 
@@ -17,6 +18,7 @@ type TcgCard = {
   number: string;
   finish: string;
   owned: boolean;
+  model: CardModel;
 };
 
 const placeholderCards: TcgCard[] = Array.from({ length: 9 }, (_, i) => ({
@@ -27,6 +29,7 @@ const placeholderCards: TcgCard[] = Array.from({ length: 9 }, (_, i) => ({
   number: `#${String(i + 1).padStart(3, "0")}`,
   finish: "Placeholder",
   owned: i % 3 !== 2, // every third card is "unowned" so the Owned filter does something
+  model: null
 }));
 
 const DECK_LIMIT = 60;
@@ -37,11 +40,27 @@ type DeckEntry = { card: TcgCard; qty: number };
 // ---- Page ----
 
 export default function BuilderPage() {
+  const tcgdex = new TCGdex("en");
+  const [cards, setCards] = useState<TcgCard>([])
   const [deckName, setDeckName] = useState("Placeholder Deck");
   const [deck, setDeck] = useState<DeckEntry[]>([]);
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [ownedOnly, setOwnedOnly] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    tcgdex.fetch('sets', 'swsh3').then((set) => {
+      if (set !== undefined) {
+        setCards(
+          set.cards.map<TcgCard>(card => {
+              id: card.id,
+
+          })
+        )
+      }
+    })
+  })
+
 
   const totalCards = deck.reduce((sum, e) => sum + e.qty, 0);
   const ownedInDeck = deck
