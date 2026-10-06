@@ -117,6 +117,7 @@ const placeholderCards: TcgCard[] = [
   },
 ];
 
+// Choose the card color from its type
 function getCardColor(types: string[]) {
   if (types.includes("Fire")) return "bg-red-400";
   if (types.includes("Water")) return "bg-blue-400";
@@ -339,6 +340,8 @@ function CollectionCard({
   card: TcgCard;
   onOpen: () => void;
 }) {
+  const cardColor = getCardColor(card.types);
+
   return (
     <Card
       size="sm"
@@ -349,7 +352,9 @@ function CollectionCard({
         onClick={onOpen}
         className="text-left"
       >
-        <div className="flex items-center justify-between bg-green-400 px-3 py-2">
+        <div
+          className={`flex items-center justify-between px-3 py-2 text-black ${cardColor}`}
+        >
           <span className="truncate text-xs font-extrabold uppercase tracking-wide">
             {card.name}
           </span>
@@ -369,7 +374,9 @@ function CollectionCard({
       </button>
 
       <div className="mt-2 flex items-center px-3">
-        <span className="rounded-full bg-green-400 px-2 py-0.5 text-[10px] font-semibold text-white">
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold text-black ${cardColor}`}
+        >
           {card.finish}
         </span>
       </div>
@@ -385,6 +392,8 @@ function CardDetailsModal({
   card: TcgCard;
   onClose: () => void;
 }) {
+  const cardColor = getCardColor(card.types);
+
   // Close when Escape is pressed
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -417,7 +426,9 @@ function CardDetailsModal({
         className="max-h-[90vh] w-full max-w-lg overflow-y-auto pt-0 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between bg-green-400 px-4 py-3">
+        <div
+          className={`flex items-center justify-between px-4 py-3 text-black ${cardColor}`}
+        >
           <CardTitle className="font-extrabold uppercase tracking-wide">
             {card.name}
           </CardTitle>
@@ -426,6 +437,7 @@ function CardDetailsModal({
             type="button"
             variant="ghost"
             size="icon-sm"
+            className="text-black"
             aria-label="Close"
             onClick={onClose}
           >
