@@ -221,6 +221,22 @@ export default function CollectionPage() {
                 <h2 className="mb-4 text-lg font-semibold">
                   Filter & Sort
                 </h2>
+                {/* Pokemon Type filters*/}
+                <div className="mb-6 flex flex-wrap gap-2">
+                {["All", "Fire", "Water", "Grass"].map((type) => (
+                  <Button
+                    key={type}
+                    type="button"
+                    variant={
+                      selectedType === type ? "default" : "outline"
+                    }
+                    aria-pressed={selectedType === type}
+                    onClick={() => setSelectedType(type)}
+                  >
+                    {type}
+                  </Button>
+                ))}
+              </div>
 
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -285,21 +301,7 @@ export default function CollectionPage() {
 
             {/* Right side: type buttons and cards */}
             <div className="min-w-0">
-              <div className="mb-6 flex flex-wrap gap-2">
-                {["All", "Fire", "Water", "Grass"].map((type) => (
-                  <Button
-                    key={type}
-                    type="button"
-                    variant={
-                      selectedType === type ? "default" : "outline"
-                    }
-                    aria-pressed={selectedType === type}
-                    onClick={() => setSelectedType(type)}
-                  >
-                    {type}
-                  </Button>
-                ))}
-              </div>
+
 
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
                 {visibleCards.map((card) => (
