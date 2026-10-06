@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Check, Plus, Save, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Plus, Save, Search, SlidersHorizontal, X } from "lucide-react";
 
 import Container from "@/components/custom/Container";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
 
-// ---- Placeholder data ----
+// ---- Placeholder data (swap for real data from your API later) ----
 
 type TcgCard = {
   id: string;
   name: string;
+  type: string;
+  rarity: string;
   price: string;
   set: string;
   number: string;
@@ -19,15 +21,44 @@ type TcgCard = {
   owned: boolean;
 };
 
-const placeholderCards: TcgCard[] = Array.from({ length: 9 }, (_, i) => ({
+// Placeholder values are varied on purpose so every filter has something to filter
+const TYPES = ["Grass", "Fire", "Water", "Lightning", "Psychic", "Fighting"];
+const RARITIES = ["Common", "Uncommon", "Rare", "Rare Holo"];
+const SETS = ["Placeholder Set A", "Placeholder Set B", "Placeholder Set C"];
+
+const placeholderCards: TcgCard[] = Array.from({ length: 12 }, (_, i) => ({
   id: String(i + 1),
-  name: "Placeholder",
+  name: `Placeholder ${i + 1}`,
+  type: TYPES[i % TYPES.length],
+  rarity: RARITIES[i % RARITIES.length],
   price: "$0.00",
-  set: "Placeholder Set",
+  set: SETS[i % SETS.length],
   number: `#${String(i + 1).padStart(3, "0")}`,
   finish: "Placeholder",
   owned: i % 3 !== 2, // every third card is "unowned" so the Owned filter does something
 }));
+
+// Filter options are built from the data, so new types/sets show up automatically
+const uniqueSorted = (values: string[]) => [...new Set(values)].sort();
+const typeOptions = uniqueSorted(placeholderCards.map((c) => c.type));
+const rarityOptions = RARITIES.filter((r) => placeholderCards.some((c) => c.rarity === r)); // keep rarity order
+const setOptions = uniqueSorted(placeholderCards.map((c) => c.set));
+
+type Filters = {
+  search: string;
+  type: string;
+  rarity: string;
+  set: string;
+  ownedOnly: boolean;
+};
+
+const emptyFilters: Filters = {
+  search: "",
+  type: "",
+  rarity: "",
+  set: "",
+  ownedOnly: false,
+};
 
 const DECK_LIMIT = 60;
 const COPY_LIMIT = 4; // standard TCG rule: max 4 copies of a card
@@ -40,7 +71,7 @@ export default function BuilderPage() {
   const [deckName, setDeckName] = useState("Placeholder Deck");
   const [deck, setDeck] = useState<DeckEntry[]>([]);
   const [selected, setSelected] = useState<TcgCard | null>(null);
-  const [ownedOnly, setOwnedOnly] = useState(false);
+  const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [saved, setSaved] = useState(false);
 
   const totalCards = deck.reduce((sum, e) => sum + e.qty, 0);
@@ -48,9 +79,30 @@ export default function BuilderPage() {
     .filter((e) => e.card.owned)
     .reduce((sum, e) => sum + e.qty, 0);
 
-  const visibleCards = ownedOnly
-    ? placeholderCards.filter((c) => c.owned)
-    : placeholderCards;
+  // Update one filter at a time, e.g. updateFilter("type", "Fire")
+  function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  }
+
+  const hasActiveFilters =
+    filters.search !== "" ||
+    filters.type !== "" ||
+    filters.rarity !== "" ||
+    filters.set !== "" ||
+    filters.ownedOnly;
+
+  // A card shows up only if it passes every active filter
+  const visibleCards = useMemo(() => {
+    const query = filters.search.trim().toLowerCase();
+    return placeholderCards.filter((card) => {
+      if (query && !card.name.toLowerCase().includes(query)) return false;
+      if (filters.type && card.type !== filters.type) return false;
+      if (filters.rarity && card.rarity !== filters.rarity) return false;
+      if (filters.set && card.set !== filters.set) return false;
+      if (filters.ownedOnly && !card.owned) return false;
+      return true;
+    });
+  }, [filters]);
 
   const qtyInDeck = (id: string) => deck.find((e) => e.card.id === id)?.qty ?? 0;
   const canAdd = (id: string) =>
@@ -147,20 +199,42 @@ export default function BuilderPage() {
 
         {/* ---- Right: search + card grid ---- */}
         <section>
-          <div className="mb-6 flex items-center gap-4">
+          {/* Search + Owned toggle */}
+          <div className="mb-3 flex items-center gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
+                value={filters.search}
+                onChange={(e) => updateFilter("search", e.target.value)}
                 placeholder="Search all cards -- Owned & unowned..."
-                className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-pink-300"
+                aria-label="Search cards by name"
+                className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-9 text-sm shadow-sm outline-none focus:ring-2 focus:ring-pink-300"
               />
+              {filters.search && (
+                <button
+                  onClick={() => updateFilter("search", "")}
+                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
             </div>
+            {/* Filters dropdown */}
+            <FiltersDropdown
+              filters={filters}
+              onChange={updateFilter}
+              onClear={() =>
+                setFilters((prev) => ({ ...emptyFilters, search: prev.search, ownedOnly: prev.ownedOnly }))
+              }
+            />
+
             <button
-              onClick={() => setOwnedOnly((v) => !v)}
-              aria-pressed={ownedOnly}
+              onClick={() => updateFilter("ownedOnly", !filters.ownedOnly)}
+              aria-pressed={filters.ownedOnly}
               className={`rounded-xl px-5 py-2 text-lg font-medium transition-colors ${
-                ownedOnly
+                filters.ownedOnly
                   ? "bg-foreground text-background"
                   : "bg-card text-foreground ring-1 ring-foreground/15 hover:bg-muted"
               }`}
@@ -169,18 +243,44 @@ export default function BuilderPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-6 md:grid-cols-3">
-            {visibleCards.map((card) => (
-              <BuilderCard
-                key={card.id}
-                card={card}
-                qty={qtyInDeck(card.id)}
-                onOpen={() => setSelected(card)}
-                onAdd={() => addToDeck(card)}
-                disabled={!canAdd(card.id)}
-              />
-            ))}
+          {/* Result count + clear all */}
+          <div className="mb-6 flex min-h-8 items-center justify-between gap-3">
+            <span className="text-xs text-muted-foreground">
+              Showing {visibleCards.length} of {placeholderCards.length} cards
+            </span>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={() => setFilters(emptyFilters)}>
+                <X /> Clear all
+              </Button>
+            )}
           </div>
+
+          {visibleCards.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border py-16 text-center">
+              <p className="font-medium">No cards match those filters.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => setFilters(emptyFilters)}
+              >
+                Clear filters
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-6 md:grid-cols-3">
+              {visibleCards.map((card) => (
+                <BuilderCard
+                  key={card.id}
+                  card={card}
+                  qty={qtyInDeck(card.id)}
+                  onOpen={() => setSelected(card)}
+                  onAdd={() => addToDeck(card)}
+                  disabled={!canAdd(card.id)}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </div>
 
@@ -197,6 +297,121 @@ export default function BuilderPage() {
     </Container>
   );
 }
+
+// ---- Filters dropdown (Type / Rarity / Set) ----
+
+const filterGroups: { key: "type" | "rarity" | "set"; label: string; options: string[] }[] = [
+  { key: "type", label: "Type", options: typeOptions },
+  { key: "rarity", label: "Rarity", options: rarityOptions },
+  { key: "set", label: "Set", options: setOptions },
+];
+
+function FiltersDropdown({
+  filters,
+  onChange,
+  onClear,
+}: {
+  filters: Filters;
+  onChange: (key: "type" | "rarity" | "set", value: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // How many of the dropdown's filters are on (shown as a badge on the button)
+  const activeCount = filterGroups.filter((g) => filters[g.key] !== "").length;
+
+  // Close when clicking outside the dropdown or pressing Escape
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        className={`flex items-center gap-2 rounded-xl px-4 py-2 text-lg font-medium transition-colors ${
+          activeCount > 0 || open
+            ? "bg-foreground text-background"
+            : "bg-card text-foreground ring-1 ring-foreground/15 hover:bg-muted"
+        }`}
+      >
+        <SlidersHorizontal className="size-4" />
+        Filters
+        {activeCount > 0 && (
+          <span className="flex size-5 items-center justify-center rounded-full bg-pink-500 text-xs font-bold text-white">
+            {activeCount}
+          </span>
+        )}
+        <ChevronDown className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Card filters"
+          className="absolute right-0 z-40 mt-2 w-80 rounded-xl bg-card p-4 shadow-xl ring-1 ring-foreground/10"
+        >
+          <div className="space-y-4">
+            {filterGroups.map((group) => (
+              <fieldset key={group.key}>
+                <legend className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  {group.label}
+                </legend>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.options.map((opt) => {
+                    const selected = filters[group.key] === opt;
+                    return (
+                      <button
+                        key={opt}
+                        // Click a selected chip again to turn it off
+                        onClick={() => onChange(group.key, selected ? "" : opt)}
+                        aria-pressed={selected}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                          selected
+                            ? "bg-foreground text-background"
+                            : "bg-muted text-foreground hover:bg-muted-foreground/20"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ))}
+          </div>
+
+          <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+            <Button variant="ghost" size="sm" onClick={onClear} disabled={activeCount === 0}>
+              Reset
+            </Button>
+            <Button size="sm" onClick={() => setOpen(false)}>
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // ---- Deck progress bar with tick marks every 10 cards ----
 
@@ -303,6 +518,8 @@ function CardDetailsModal({
   }, [onClose]);
 
   const details = [
+    { label: "Type", value: card.type },
+    { label: "Rarity", value: card.rarity },
     { label: "Set", value: card.set },
     { label: "Number", value: card.number },
     { label: "Finish", value: card.finish },
