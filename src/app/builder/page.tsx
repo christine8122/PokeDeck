@@ -18,19 +18,8 @@ type TcgCard = {
   number: string;
   finish: string;
   owned: boolean;
-  model: CardModel;
+  model: CardResume;
 };
-
-const placeholderCards: TcgCard[] = Array.from({ length: 9 }, (_, i) => ({
-  id: String(i + 1),
-  name: "Placeholder",
-  price: "$0.00",
-  set: "Placeholder Set",
-  number: `#${String(i + 1).padStart(3, "0")}`,
-  finish: "Placeholder",
-  owned: i % 3 !== 2, // every third card is "unowned" so the Owned filter does something
-  model: null
-}));
 
 const DECK_LIMIT = 60;
 const COPY_LIMIT = 4; // standard TCG rule: max 4 copies of a card
@@ -41,7 +30,7 @@ type DeckEntry = { card: TcgCard; qty: number };
 
 export default function BuilderPage() {
   const tcgdex = new TCGdex("en");
-  const [cards, setCards] = useState<TcgCard>([])
+  const [cards, setCards] = useState<TcgCard[]>([]);
   const [deckName, setDeckName] = useState("Placeholder Deck");
   const [deck, setDeck] = useState<DeckEntry[]>([]);
   const [selected, setSelected] = useState<TcgCard | null>(null);
@@ -49,18 +38,23 @@ export default function BuilderPage() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    tcgdex.fetch('sets', 'swsh3').then((set) => {
+    tcgdex.fetch("sets", "swsh3").then((set) => {
       if (set !== undefined) {
         setCards(
-          set.cards.map<TcgCard>(card => {
-              id: card.id,
-
-          })
-        )
+          set.cards.map<TcgCard>((c) => ({
+            id: c.id,
+            name: c.name,
+            price: "$0.00",
+            set: set.name,
+            number: c.localId,
+            finish: "Placeholder",
+            owned: Math.random() < 0.75,
+            model: c
+          })),
+        );
       }
-    })
-  })
-
+    });
+  });
 
   const totalCards = deck.reduce((sum, e) => sum + e.qty, 0);
   const ownedInDeck = deck
@@ -68,10 +62,11 @@ export default function BuilderPage() {
     .reduce((sum, e) => sum + e.qty, 0);
 
   const visibleCards = ownedOnly
-    ? placeholderCards.filter((c) => c.owned)
-    : placeholderCards;
+    ? cards.filter((c) => c.owned)
+    : cards;
 
-  const qtyInDeck = (id: string) => deck.find((e) => e.card.id === id)?.qty ?? 0;
+  const qtyInDeck = (id: string) =>
+    deck.find((e) => e.card.id === id)?.qty ?? 0;
   const canAdd = (id: string) =>
     totalCards < DECK_LIMIT && qtyInDeck(id) < COPY_LIMIT;
 
@@ -80,8 +75,10 @@ export default function BuilderPage() {
     setSaved(false);
     setDeck((prev) =>
       prev.some((e) => e.card.id === card.id)
-        ? prev.map((e) => (e.card.id === card.id ? { ...e, qty: e.qty + 1 } : e))
-        : [...prev, { card, qty: 1 }]
+        ? prev.map((e) =>
+            e.card.id === card.id ? { ...e, qty: e.qty + 1 } : e,
+          )
+        : [...prev, { card, qty: 1 }],
     );
   }
 
@@ -90,7 +87,7 @@ export default function BuilderPage() {
     setDeck((prev) =>
       prev
         .map((e) => (e.card.id === id ? { ...e, qty: e.qty - 1 } : e))
-        .filter((e) => e.qty > 0)
+        .filter((e) => e.qty > 0),
     );
   }
 
@@ -120,7 +117,10 @@ export default function BuilderPage() {
               ) : (
                 <ul className="max-h-80 space-y-1 overflow-y-auto">
                   {deck.map(({ card, qty }) => (
-                    <li key={card.id} className="flex items-center gap-3 py-1.5">
+                    <li
+                      key={card.id}
+                      className="flex items-center gap-3 py-1.5"
+                    >
                       <span className="size-4 shrink-0 rounded-full bg-muted-foreground/30" />
                       <button
                         onClick={() => setSelected(card)}
@@ -259,7 +259,10 @@ function BuilderCard({
   disabled: boolean;
 }) {
   return (
-    <Card size="sm" className="gap-0 pt-0 pb-3 shadow-md transition-shadow hover:shadow-lg">
+    <Card
+      size="sm"
+      className="gap-0 pt-0 pb-3 shadow-md transition-shadow hover:shadow-lg"
+    >
       {/* Clicking the card body opens the details modal */}
       <button onClick={onOpen} className="text-left">
         <div className="flex items-center justify-between bg-green-400 px-3 py-2">
@@ -271,7 +274,7 @@ function BuilderCard({
 
         <div className="flex gap-2 px-3 pt-3">
           <div className="flex h-36 flex-1 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
-            Picture
+            <img className="max-h-full" src={card.model.image + "/low.webp"} />
           </div>
           <span className="text-xs font-bold">{card.price}</span>
         </div>
@@ -346,7 +349,12 @@ function CardDetailsModal({
           <CardTitle className="font-extrabold uppercase tracking-wide">
             {card.name}
           </CardTitle>
-          <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close"
+            onClick={onClose}
+          >
             <X />
           </Button>
         </div>
@@ -357,13 +365,17 @@ function CardDetailsModal({
           </div>
           <dl className="space-y-2 text-sm">
             {details.map((d) => (
-              <div key={d.label} className="flex justify-between gap-4 border-b border-border pb-1">
+              <div
+                key={d.label}
+                className="flex justify-between gap-4 border-b border-border pb-1"
+              >
                 <dt className="text-muted-foreground">{d.label}</dt>
                 <dd className="font-medium">{d.value}</dd>
               </div>
             ))}
             <p className="pt-2 text-muted-foreground">
-              Placeholder description. Card text, attacks, and prices will go here.
+              Placeholder description. Card text, attacks, and prices will go
+              here.
             </p>
           </dl>
         </CardContent>
