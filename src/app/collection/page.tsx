@@ -12,8 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-// ---- Placeholder data ----
-
+// Placeholder cards for testing
 type TcgCard = {
   id: string;
   name: string;
@@ -42,7 +41,7 @@ const placeholderCards: TcgCard[] = [
     price: "$0.00",
     set: "Placeholder Set",
     number: "#002",
-    finish: "Normal",
+    finish: "Holo",
     owned: true,
     types: ["Water"],
   },
@@ -52,20 +51,91 @@ const placeholderCards: TcgCard[] = [
     price: "$0.00",
     set: "Placeholder Set",
     number: "#003",
+    finish: "Reverse Holo",
+    owned: true,
+    types: ["Grass"],
+  },
+  {
+    id: "4",
+    name: "Vulpix",
+    price: "$0.00",
+    set: "Placeholder Set",
+    number: "#004",
+    finish: "Holo",
+    owned: true,
+    types: ["Fire"],
+  },
+  {
+    id: "5",
+    name: "Growlithe",
+    price: "$0.00",
+    set: "Placeholder Set",
+    number: "#005",
+    finish: "Reverse Holo",
+    owned: true,
+    types: ["Fire"],
+  },
+  {
+    id: "6",
+    name: "Psyduck",
+    price: "$0.00",
+    set: "Placeholder Set",
+    number: "#006",
     finish: "Normal",
+    owned: true,
+    types: ["Water"],
+  },
+  {
+    id: "7",
+    name: "Poliwag",
+    price: "$0.00",
+    set: "Placeholder Set",
+    number: "#007",
+    finish: "Reverse Holo",
+    owned: true,
+    types: ["Water"],
+  },
+  {
+    id: "8",
+    name: "Oddish",
+    price: "$0.00",
+    set: "Placeholder Set",
+    number: "#008",
+    finish: "Normal",
+    owned: true,
+    types: ["Grass"],
+  },
+  {
+    id: "9",
+    name: "Bellsprout",
+    price: "$0.00",
+    set: "Placeholder Set",
+    number: "#009",
+    finish: "Holo",
     owned: true,
     types: ["Grass"],
   },
 ];
 
-// ---- Page ----
+function getCardColor(types: string[]) {
+  if (types.includes("Fire")) return "bg-red-400";
+  if (types.includes("Water")) return "bg-blue-400";
+  if (types.includes("Grass")) return "bg-green-400";
+
+  return "bg-gray-400";
+}
 
 export default function CollectionPage() {
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [search, setSearch] = useState("");
   const [selectedType, setSelectedType] = useState("All");
 
-  const visibleCards = placeholderCards.filter((card) => {
+  const [showFilters, setShowFilters] = useState(true);
+  const [selectedFinish, setSelectedFinish] = useState("All");
+  const [sortOrder, setSortOrder] = useState("az");
+
+  // Find matching cards
+  const filteredCards = placeholderCards.filter((card) => {
     const matchesSearch = card.name
       .toLowerCase()
       .includes(search.trim().toLowerCase());
@@ -73,13 +143,32 @@ export default function CollectionPage() {
     const matchesType =
       selectedType === "All" || card.types.includes(selectedType);
 
-    return matchesSearch && matchesType;
+    const matchesFinish =
+      selectedFinish === "All" || card.finish === selectedFinish;
+
+    return matchesSearch && matchesType && matchesFinish;
   });
+
+  // Sort matching cards
+  const visibleCards = [...filteredCards].sort((a, b) => {
+    if (sortOrder === "za") {
+      return b.name.localeCompare(a.name);
+    }
+
+    return a.name.localeCompare(b.name);
+  });
+
+  function clearFilters() {
+    setSearch("");
+    setSelectedType("All");
+    setSelectedFinish("All");
+    setSortOrder("az");
+  }
 
   return (
     <Container>
       <div className="space-y-6">
-        {/* ---- Collection heading ---- */}
+        {/* Collection heading */}
         <header>
           <h1 className="text-3xl font-bold">My Collection</h1>
           <p className="mt-2 text-muted-foreground">
@@ -87,9 +176,19 @@ export default function CollectionPage() {
           </p>
         </header>
 
-        {/* ---- Search + type filters + card grid ---- */}
         <section>
-          <div className="mb-6 flex items-center gap-4">
+          {/* Search bar and filter button */}
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
+            <Button
+              type="button"
+              variant="outline"
+              aria-expanded={showFilters}
+              aria-controls="collection-filters"
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              Filter & Sort
+            </Button>
+
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 
@@ -104,41 +203,124 @@ export default function CollectionPage() {
             </div>
           </div>
 
-          {/* ---- Type buttons ---- */}
-          <div className="mb-6 flex flex-wrap gap-2">
-            {["All", "Fire", "Water", "Grass"].map((type) => (
-              <Button
-                key={type}
-                type="button"
-                variant={selectedType === type ? "default" : "outline"}
-                aria-pressed={selectedType === type}
-                onClick={() => setSelectedType(type)}
+          {/* Sidebar and cards */}
+          <div
+            className={
+              showFilters
+                ? "grid gap-6 lg:grid-cols-[240px_1fr]"
+                : "grid gap-6"
+            }
+          >
+            {/* Left side: filters */}
+            {showFilters && (
+              <aside
+                id="collection-filters"
+                className="self-start rounded-lg border border-border bg-card p-4 shadow-sm"
               >
-                {type}
-              </Button>
-            ))}
-          </div>
+                <h2 className="mb-4 text-lg font-semibold">
+                  Filter & Sort
+                </h2>
 
-          {/* ---- Card grid ---- */}
-          <div className="grid grid-cols-2 gap-6 md:grid-cols-3">
-            {visibleCards.map((card) => (
-              <CollectionCard
-                key={card.id}
-                card={card}
-                onOpen={() => setSelected(card)}
-              />
-            ))}
-          </div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="sort-order"
+                      className="text-sm font-medium"
+                    >
+                      Sort by
+                    </label>
 
-          {visibleCards.length === 0 && (
-            <p className="py-8 text-center text-muted-foreground">
-              No cards match your search or filters.
-            </p>
-          )}
+                    <select
+                      id="sort-order"
+                      value={sortOrder}
+                      onChange={(e) => setSortOrder(e.target.value)}
+                      className="w-full rounded-md border border-border bg-background p-2 text-sm"
+                    >
+                      <option value="az">Name: A–Z</option>
+                      <option value="za">Name: Z–A</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="card-finish"
+                      className="text-sm font-medium"
+                    >
+                      Finish
+                    </label>
+
+                    <select
+                      id="card-finish"
+                      value={selectedFinish}
+                      onChange={(e) => setSelectedFinish(e.target.value)}
+                      className="w-full rounded-md border border-border bg-background p-2 text-sm"
+                    >
+                      <option value="All">All finishes</option>
+                      <option value="Normal">Normal</option>
+                      <option value="Holo">Holo</option>
+                      <option value="Reverse Holo">Reverse Holo</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={clearFilters}
+                  >
+                    Clear filters
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={() => setShowFilters(false)}
+                  >
+                    Done
+                  </Button>
+                </div>
+              </aside>
+            )}
+
+            {/* Right side: type buttons and cards */}
+            <div className="min-w-0">
+              <div className="mb-6 flex flex-wrap gap-2">
+                {["All", "Fire", "Water", "Grass"].map((type) => (
+                  <Button
+                    key={type}
+                    type="button"
+                    variant={
+                      selectedType === type ? "default" : "outline"
+                    }
+                    aria-pressed={selectedType === type}
+                    onClick={() => setSelectedType(type)}
+                  >
+                    {type}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                {visibleCards.map((card) => (
+                  <CollectionCard
+                    key={card.id}
+                    card={card}
+                    onOpen={() => setSelected(card)}
+                  />
+                ))}
+              </div>
+
+              {visibleCards.length === 0 && (
+                <p className="py-8 text-center text-muted-foreground">
+                  No cards match your search or filters.
+                </p>
+              )}
+            </div>
+          </div>
         </section>
       </div>
 
-      {/* ---- Card details modal ---- */}
+      {/* Card details */}
       {selected && (
         <CardDetailsModal
           card={selected}
@@ -149,8 +331,7 @@ export default function CollectionPage() {
   );
 }
 
-// ---- Card tile in the grid ----
-
+// Card shown in the grid
 function CollectionCard({
   card,
   onOpen,
@@ -163,7 +344,6 @@ function CollectionCard({
       size="sm"
       className="gap-0 pt-0 pb-3 shadow-md transition-shadow hover:shadow-lg"
     >
-      {/* Clicking the card body opens the details modal */}
       <button
         type="button"
         onClick={onOpen}
@@ -197,8 +377,7 @@ function CollectionCard({
   );
 }
 
-// ---- Card details modal ----
-
+// Popup with the selected card's details
 function CardDetailsModal({
   card,
   onClose,
@@ -206,7 +385,7 @@ function CardDetailsModal({
   card: TcgCard;
   onClose: () => void;
 }) {
-  // Close on Escape
+  // Close when Escape is pressed
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -235,7 +414,7 @@ function CardDetailsModal({
         role="dialog"
         aria-modal="true"
         aria-label={`${card.name} details`}
-        className="w-full max-w-lg pt-0 shadow-xl"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto pt-0 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between bg-green-400 px-4 py-3">
@@ -244,6 +423,7 @@ function CardDetailsModal({
           </CardTitle>
 
           <Button
+            type="button"
             variant="ghost"
             size="icon-sm"
             aria-label="Close"
@@ -281,7 +461,11 @@ function CardDetailsModal({
         </CardContent>
 
         <CardFooter className="justify-end">
-          <Button variant="outline" onClick={onClose}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+          >
             Close
           </Button>
         </CardFooter>
