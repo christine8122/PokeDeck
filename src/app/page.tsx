@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 
 import Container from "@/components/custom/Container";
@@ -14,15 +15,15 @@ export default function HomePage() {
       <section className="grid items-center gap-12 py-12 md:grid-cols-2 md:py-20">
         {/* Left: copy */}
         <div>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-2xl text-muted-foreground">
             Your collection, actually organized.
           </p>
 
-          <h1 className="mt-4 text-5xl font-extrabold leading-tight tracking-tight md:text-6xl">
+          <h1 className="mt-4 text-6xl font-extrabold leading-tight tracking-tight lg:text-7xl">
             Build the deck you can&apos;t find in your binder.
           </h1>
 
-          <p className="mt-6 max-w-md leading-relaxed text-muted-foreground">
+          <p className="mt-6 max-w-lg text-2xl leading-relaxed text-muted-foreground">
             Track every card you own, theorycraft with the ones you don&apos;t,
             and put a deck together without dumping a shoebox onto the table.
           </p>
@@ -31,13 +32,13 @@ export default function HomePage() {
           <div className="mt-8 flex flex-wrap gap-4">
             <Link
               href="/dashboard"
-              className="rounded-xl border-b-4 border-orange-600 bg-yellow-400 px-6 py-3 text-lg font-medium text-foreground transition-all hover:brightness-105 active:translate-y-0.5 active:border-b-2"
+              className="rounded-xl border-b-4 border-orange-600 bg-yellow-400 px-8 py-4 text-xl font-medium text-foreground transition-all hover:brightness-105 active:translate-y-0.5 active:border-b-2"
             >
               Open my dashboard
             </Link>
             <Link
               href="/collection"
-              className="rounded-xl border-b-4 border-border bg-card px-6 py-3 text-lg font-medium text-foreground shadow-sm ring-1 ring-foreground/10 transition-all hover:bg-muted active:translate-y-0.5 active:border-b-2"
+              className="rounded-xl border-b-4 border-border bg-card px-8 py-4 text-xl font-medium text-foreground shadow-sm ring-1 ring-foreground/10 transition-all hover:bg-muted active:translate-y-0.5 active:border-b-2"
             >
               Browse the database
             </Link>
@@ -47,10 +48,10 @@ export default function HomePage() {
           <dl className="mt-10 grid grid-cols-3 gap-4 text-center">
             {highlights.map((item) => (
               <div key={item.title}>
-                <dt className="text-sm font-extrabold uppercase tracking-wider">
+                <dt className="text-2xl ml-2  mx-3 font-extrabold uppercase tracking-wider">
                   {item.title}
                 </dt>
-                <dd className="mt-1 text-xs text-muted-foreground">
+                <dd className="mt-2  text-lg text-muted-foreground">
                   {item.caption}
                 </dd>
               </div>
@@ -77,11 +78,11 @@ function CardStack() {
   ];
 
   return (
-    <div aria-hidden className="relative mx-auto hidden h-[420px] w-full max-w-md md:block">
+    <div aria-hidden className="relative mx-auto hidden h-[480px] w-full max-w-lg md:block">
       {cards.map((card, i) => (
         <div
           key={i}
-          className={`absolute h-60 w-44 rounded-2xl shadow-lg transition-transform duration-300 hover:-translate-y-2 ${card.className}`}
+          className={`absolute h-72 w-52 rounded-2xl shadow-lg transition-transform duration-300 hover:-translate-y-2 ${card.className}`}
         />
       ))}
       {/* Soft shadow under the stack */}
