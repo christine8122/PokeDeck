@@ -558,7 +558,7 @@ function FiltersDropdown({
         className="gap-2 px-5 py-6 text-base"
       >
         <SlidersHorizontal className="size-5" />
-        Filter & Sort
+        Filters
 
         {activeCount > 0 && (
           <span className="flex size-6 items-center justify-center rounded-full bg-pink-500 text-xs font-bold text-white">
