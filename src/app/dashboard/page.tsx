@@ -56,8 +56,8 @@ export default function DashboardPage() {
     <Container>
       {/* Heading */}
       <header className="mb-8">
-        <h1 className="text-4xl font-extrabold tracking-tight">Welcome Back</h1>
-        <p className="mt-2 text-muted-foreground">
+        <h1 className="text-6xl font-extrabold tracking-tight">Welcome Back</h1>
+        <p className="mt-2 text-2xl text-muted-foreground">
           Here&apos;s where your collection and decks stand.
         </p>
       </header>
@@ -67,8 +67,8 @@ export default function DashboardPage() {
         {stats.map((stat) => (
           <Card key={stat.label} className={`ring-2 shadow-sm ${stat.ring}`}>
             <CardContent>
-              <p className="text-3xl font-extrabold">{stat.value}</p>
-              <p className="mt-1 text-muted-foreground">{stat.label}</p>
+              <p className="text-5xl font-extrabold">{stat.value}</p>
+              <p className="mt-1 text-2xl text-muted-foreground">{stat.label}</p>
             </CardContent>
           </Card>
         ))}
@@ -77,13 +77,14 @@ export default function DashboardPage() {
       {/* Recent decks */}
       <Card className="mb-8 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg font-bold">Recent Decks</CardTitle>
+          <CardTitle className="text-3xl font-bold">Recent Decks</CardTitle>
           <CardAction>
             <Link
               href="/builder"
-              className={buttonVariants({ variant: "link", size: "sm" })}
+              className={buttonVariants({ variant: "link", size: "default" })}
             >
-              View all <ChevronRight />
+              <span className="text-lg">View all</span>
+              <ChevronRight className="h-6 w-6" />
             </Link>
           </CardAction>
         </CardHeader>
@@ -96,10 +97,10 @@ export default function DashboardPage() {
                   href={`/builder/${deck.id}`}
                   className="flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-muted"
                 >
-                  <span className={`size-9 shrink-0 rounded-md ${deck.color}`} />
+                  <span className={`size-16 shrink-0 rounded-lg ${deck.color}`} />
                   <div className="flex-1">
-                    <p className="font-medium">{deck.name}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-2xl">{deck.name}</p>
+                    <p className="text-lg text-muted-foreground">
                       {deck.cards} cards · edited {deck.edited}
                     </p>
                   </div>
@@ -114,19 +115,20 @@ export default function DashboardPage() {
       {/* Recently added */}
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg font-bold">Recently added to collection</CardTitle>
+          <CardTitle className="text-3xl font-bold">Recently added to collection</CardTitle>
           <CardAction>
             <Link
               href="/collection"
-              className={buttonVariants({ variant: "link", size: "sm" })}
+              className={buttonVariants({ variant: "link", size: "default" })}
             >
-              View Collection <ChevronRight />
+              <span className="text-lg">View Collection</span>
+              <ChevronRight className="h-6 w-6" />
             </Link>
           </CardAction>
         </CardHeader>
 
         <CardContent>
-          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4 min-h-[280px]">
             {recentCards.map((card) => (
               <CollectionPreviewCard key={card.id} card={card} />
             ))}
@@ -141,39 +143,38 @@ export default function DashboardPage() {
 
 function CollectionPreviewCard({ card }: { card: (typeof recentCards)[number] }) {
   return (
-    <Card size="sm" className="relative gap-3 pt-0 shadow-md">
+    <Card className="relative gap-5 pt-0 shadow-md">
       {/* Rarity ribbon */}
       <span
-        className={`absolute -left-7 top-3 z-10 w-24 -rotate-45 py-0.5 text-center text-[10px] font-bold text-white shadow ${rarityRibbon[card.rarity]}`}
+        className={`absolute -left-8 top-4 z-10 w-28 -rotate-45 py-1 text-center text-xs font-bold text-white shadow ${rarityRibbon[card.rarity]}`}
       >
         {card.rarity}
       </span>
 
       {/* Colored header bar */}
       <div className={`flex items-center justify-between px-3 py-2 ${card.header}`}>
-        <span className="w-full text-center text-xs font-extrabold uppercase tracking-wide">
+        <span className="w-full p-1 translate-x-2 text-center text-lg  text-white font-extrabold uppercase tracking-wide [text-shadow:2px_3px_4px_rgba(0,0,0,0.7)]">
           {card.name}
         </span>
-        <span className="rounded-full bg-white px-1.5 text-[10px] font-semibold">
+        <span className="rounded-full px-2 py-1 bg-white px-2 text-md font-semibold">
           x{card.qty}
         </span>
       </div>
 
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-4 p-4">
         <div className="flex items-start gap-2">
           {/* Swap for <Image /> once you have card art */}
-          <div className="flex h-16 flex-1 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+          <div className="flex h-67 flex-1 items-center justify-center rounded-md bg-muted text-md font-semibold text-muted-foreground">
             Picture
           </div>
-          <span className="text-xs font-bold">{card.price}</span>
         </div>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-lg text-muted-foreground">
           {card.set} · {card.number}
         </p>
 
         <span
-          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold text-white ${card.pill}`}
+          className={`rounded-full px-3 py-2 text-md font-semibold text-white ${card.pill}`}
         >
           {card.finish}
         </span>
