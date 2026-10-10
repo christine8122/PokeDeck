@@ -128,7 +128,7 @@ export default function DashboardPage() {
         </CardHeader>
 
         <CardContent>
-          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4 min-h-[280px]">
             {recentCards.map((card) => (
               <CollectionPreviewCard key={card.id} card={card} />
             ))}
@@ -152,11 +152,11 @@ function CollectionPreviewCard({ card }: { card: (typeof recentCards)[number] })
       </span>
 
       {/* Colored header bar */}
-      <div className={`flex items-center justify-between px-4 py-3 ${card.header}`}>
-        <span className="w-full text-center text-lg font-extrabold uppercase tracking-wide">
+      <div className={`flex items-center justify-between px-3 py-2 ${card.header}`}>
+        <span className="w-full p-1 text-center text-md font-extrabold uppercase tracking-wide">
           {card.name}
         </span>
-        <span className="rounded-full bg-white px-2 text-xs font-semibold">
+        <span className="rounded-full px-3 py-2 bg-white px-2 text-md font-semibold">
           x{card.qty}
         </span>
       </div>
@@ -164,17 +164,17 @@ function CollectionPreviewCard({ card }: { card: (typeof recentCards)[number] })
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start gap-2">
           {/* Swap for <Image /> once you have card art */}
-          <div className="flex h-48 flex-1 items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground">
+          <div className="flex h-67 flex-1 items-center justify-center rounded-md bg-muted text-md font-semibold text-muted-foreground">
             Picture
           </div>
         </div>
 
-        <p className="text-sm text-muted-foreground">
+        <p className="text-lg text-muted-foreground">
           {card.set} · {card.number}
         </p>
 
         <span
-          className={`inline-block rounded-full px-3 py-1 text-xs font-semibold text-white ${card.pill}`}
+          className={`rounded-full px-3 py-2 text-md font-semibold text-white ${card.pill}`}
         >
           {card.finish}
         </span>
