@@ -554,7 +554,7 @@ function FiltersDropdown({
         <SlidersHorizontal className="size-5" />
         Filters
         {activeCount > 0 && (
-          <span className="flex size-6 items-center justify-center rounded-full bg-pink-500 text-xs font-bold text-white">
+          <span className="flex size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">
             {activeCount}
           </span>
         )}

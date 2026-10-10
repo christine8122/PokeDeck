@@ -142,7 +142,7 @@ export default function CollectionPage() {
                 onClick={() => setShowFilters((previous) => !previous)}
               >
                 <SlidersHorizontal className="size-5" />  Filters
-                {activeCount > 0 && <span className="rounded-full bg-pink-500 px-2 py-0.5 text-xs font-bold text-white">{activeCount}</span>}
+                {activeCount > 0 && <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">{activeCount}</span>}
                 <ChevronDown className={`size-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
               </Button>
 
