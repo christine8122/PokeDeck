@@ -72,11 +72,11 @@ const placeholderCards: TcgCard[] = Array.from(
 // ---- Card colors ----
 
 function getCardColor(type: string) {
-  if (type === "Fire") return "bg-red-400";
+  if (type === "Fire") return "bg-pink-500";
   if (type === "Water") return "bg-blue-400";
   if (type === "Grass") return "bg-green-400";
   if (type === "Lightning") return "bg-yellow-300";
-  if (type === "Psychic") return "bg-purple-400";
+  if (type === "Psychic") return "bg-purple-500";
   if (type === "Fighting") return "bg-orange-400";
 
   return "bg-gray-400";
@@ -269,7 +269,7 @@ export default function BuilderPage() {
               <DeckProgress total={totalCards} />
 
               {deck.length === 0 ? (
-                <p className="py-8 text-center text-base text-muted-foreground">
+                <p className="py-8 text-center text-xl text-muted-foreground">
                   No cards yet. Hit the + on a card to add it.
                 </p>
               ) : (
@@ -311,7 +311,7 @@ export default function BuilderPage() {
               )}
 
               {/* Collection check */}
-              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm text-gray-700">
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-lg text-gray-700">
                 <Check className="size-5 shrink-0 text-green-600" />
                 {ownedInDeck} of {totalCards} cards already in your collection
               </div>
@@ -394,16 +394,13 @@ export default function BuilderPage() {
             >
               Owned
             </button>
-
           </div>
 
           {/* Result count and clear all */}
           <div className="mb-6 flex min-h-9 items-center justify-between gap-3">
-
-            <span className="text-base text-muted-foreground">
+            <span className="text-xl text-muted-foreground">
               Showing {visibleCards.length} of {placeholderCards.length} cards
             </span>
-
             {hasActiveFilters && (
               <Button
                 variant="ghost"
@@ -423,7 +420,6 @@ export default function BuilderPage() {
               <p className="text-lg font-medium">
                 No cards match those filters.
               </p>
-
               <Button
                 variant="outline"
                 className="mt-4 text-base"
@@ -446,7 +442,6 @@ export default function BuilderPage() {
               ))}
             </div>
           )}
-
         </section>
       </div>
 
@@ -548,7 +543,6 @@ function FiltersDropdown({
 
   return (
     <div ref={wrapperRef} className="relative shrink-0">
-
       <Button
         type="button"
         variant="outline"
@@ -559,7 +553,6 @@ function FiltersDropdown({
       >
         <SlidersHorizontal className="size-5" />
         Filters
-
         {activeCount > 0 && (
           <span className="flex size-6 items-center justify-center rounded-full bg-pink-500 text-xs font-bold text-white">
             {activeCount}
@@ -580,20 +573,15 @@ function FiltersDropdown({
           aria-label="Card filters"
           className="absolute right-0 z-40 mt-2 max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl"
         >
-
           <h2 className="mb-5 text-xl font-semibold">
             Filter & Sort
           </h2>
-
           <div className="space-y-5">
-
             {filterGroups.map((group) => (
               <fieldset key={group.key}>
-
                 <legend className="mb-3 text-base font-medium">
                   {group.label}
                 </legend>
-
                 <div className="flex flex-wrap gap-2">
                   {group.options.map((option) => {
                     const isSelected =
@@ -678,7 +666,6 @@ function FiltersDropdown({
     </div>
   );
 }
-
 // ---- Deck progress bar ----
 
 function DeckProgress({ total }: { total: number }) {
@@ -703,13 +690,10 @@ function DeckProgress({ total }: { total: number }) {
             }}
           />
         ))}
-
       </div>
-
       <span className="shrink-0 text-sm font-bold">
         {total} / {DECK_LIMIT} Cards
       </span>
-
     </div>
   );
 }
@@ -732,54 +716,42 @@ function BuilderCard({
   const cardColor = getCardColor(card.type);
 
   return (
-    <Card className="gap-0 pt-0 pb-4 shadow-md transition-shadow hover:shadow-lg">
+    <Card className=" gap-0 pt-0 pb-4 shadow-md transition-shadow hover:shadow-lg">
 
       <button
         type="button"
         onClick={onOpen}
         className="text-left"
       >
-
         <div
           className={`flex items-center justify-between px-4 py-3 text-black ${cardColor}`}
         >
-          <span className="truncate text-lg font-extrabold uppercase tracking-wide">
+        {/* Might have to adjust the container specfically for this page to allow the cards to extend since Placeholder Deck is taking up a ton of space */}
+          <span className=" flex items-center justify-center  text-md font-extrabold uppercase tracking-wide">
             {card.name}
           </span>
-
           {qty > 0 && (
-            <span className="text-sm font-semibold">
+            <span className="rounded-full px-3 py-2 bg-white px-2 text-md font-semibold">
               x{qty}
             </span>
           )}
         </div>
-
         <div className="flex gap-3 px-4 pt-4">
-
-          <div className="flex h-44 flex-1 items-center justify-center rounded-md bg-muted text-base font-semibold text-muted-foreground">
+          <div className="flex min-h-50  flex-1 items-center justify-center rounded-md bg-muted text-base font-semibold text-muted-foreground">
             Picture
           </div>
-
-          <span className="text-base font-bold">
-            {card.price}
-          </span>
-
         </div>
-
-        <p className="px-4 pt-3 text-sm text-muted-foreground">
+        <p className="px-4 pt-3 text-lg text-muted-foreground">
           {card.set} · {card.number}
         </p>
-
       </button>
 
       <div className="mt-3 flex items-center justify-between px-4">
-
         <span
-          className={`rounded-full px-3 py-1 text-sm font-semibold text-black ${cardColor}`}
+          className={`rounded-full px-3 py-1 text-md font-semibold text-white ${cardColor}`}
         >
           {card.finish}
         </span>
-
         <Button
           variant="outline"
           size="icon"
@@ -789,9 +761,7 @@ function BuilderCard({
         >
           <Plus className="size-5" />
         </Button>
-
       </div>
-
     </Card>
   );
 }
@@ -855,7 +825,7 @@ function CardDetailsModal({
         <div
           className={`flex items-center justify-between px-4 py-3 text-black ${cardColor}`}
         >
-          <CardTitle className="text-xl font-extrabold uppercase tracking-wide">
+          <CardTitle className="flex justify-centertext-xl font-extrabold uppercase tracking-wide">
             {card.name}
           </CardTitle>
 

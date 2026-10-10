@@ -143,7 +143,7 @@ export default function DashboardPage() {
 
 function CollectionPreviewCard({ card }: { card: (typeof recentCards)[number] }) {
   return (
-    <Card size="lg" className="relative gap-5 pt-0 shadow-md">
+    <Card className="relative gap-5 pt-0 shadow-md">
       {/* Rarity ribbon */}
       <span
         className={`absolute -left-8 top-4 z-10 w-28 -rotate-45 py-1 text-center text-xs font-bold text-white shadow ${rarityRibbon[card.rarity]}`}

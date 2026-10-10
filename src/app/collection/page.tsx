@@ -29,6 +29,15 @@ const placeholderCards: TcgCard[] = [
   { id: "7", name: "Poliwag", price: "$0.00", set: "Placeholder Set", number: "#007", finish: "Reverse Holo", rarity: "Common", owned: true, types: ["Water"] },
   { id: "8", name: "Oddish", price: "$0.00", set: "Placeholder Set", number: "#008", finish: "Normal", rarity: "Common", owned: true, types: ["Grass"] },
   { id: "9", name: "Bellsprout", price: "$0.00", set: "Placeholder Set", number: "#009", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Grass"] },
+  { id: "10", name: "Pikachu", price: "$0.00", set: "Placeholder Set", number: "#010", finish: "Normal", rarity: "Common", owned: true, types: ["Lightning"] },
+  { id: "11", name: "Magnemite", price: "$0.00", set: "Placeholder Set", number: "#011", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Lightning"] },
+  { id: "12", name: "Jolteon", price: "$0.00", set: "Placeholder Set", number: "#012", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Lightning"] },
+  { id: "13", name: "Abra", price: "$0.00", set: "Placeholder Set", number: "#013", finish: "Normal", rarity: "Common", owned: true, types: ["Psychic"] },
+  { id: "14", name: "Kadabra", price: "$0.00", set: "Placeholder Set", number: "#014", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Psychic"] },
+  { id: "15", name: "Alakazam", price: "$0.00", set: "Placeholder Set", number: "#015", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Psychic"] },
+  { id: "16", name: "Machop", price: "$0.00", set: "Placeholder Set", number: "#016", finish: "Normal", rarity: "Common", owned: true, types: ["Fighting"] },
+  { id: "17", name: "Machoke", price: "$0.00", set: "Placeholder Set", number: "#017", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Fighting"] },
+  { id: "18", name: "Machamp", price: "$0.00", set: "Placeholder Set", number: "#018", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Fighting"] },
 ];
 
 const TYPES = ["All", "Grass", "Fire", "Water", "Lightning", "Psychic", "Fighting", "Darkness", "Metal", "Dragon", "Colorless", "Fairy"];
@@ -37,11 +46,11 @@ const FINISHES = ["All", "Normal", "Holo", "Reverse Holo"];
 const SETS = ["All", ...new Set(placeholderCards.map((card) => card.set))];
 
 function getCardColor(types: string[]) {
-  if (types.includes("Fire")) return "bg-red-400";
+  if (types.includes("Fire")) return "bg-pink-500";
   if (types.includes("Water")) return "bg-blue-400";
   if (types.includes("Grass")) return "bg-green-400";
   if (types.includes("Lightning")) return "bg-yellow-300";
-  if (types.includes("Psychic")) return "bg-purple-400";
+  if (types.includes("Psychic")) return "bg-purple-500";
   if (types.includes("Fighting")) return "bg-orange-400";
   return "bg-gray-400";
 }
@@ -103,14 +112,27 @@ export default function CollectionPage() {
     <Container>
       <div className="space-y-8 py-6">
         <header>
-          <h1 className="text-4xl font-bold">My Collection</h1>
-          <p className="mt-2 text-lg text-muted-foreground">Browse your Pokemon cards.</p>
+          <h1 className="text-6xl font-bold">My Collection</h1>
+          <p className="mt-2 text-2xl text-muted-foreground">Browse your Pokemon cards.</p>
         </header>
 
         <section>
           {/* Search and filters stay in the same row; filters float above cards. */}
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div ref={filtersRef} className="relative shrink-0">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search your collection..."
+                className="w-full rounded-lg border border-border bg-card py-3 pl-12 pr-10 text-lg shadow-sm outline-none focus:ring-2 focus:ring-pink-300"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Search your collection"
+              />
+              {search && <button type="button" aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"><X className="size-5" /></button>}
+           
+          </div>
+            <div ref={filtersRef} className="relative shrink-0">            
               <Button
                 type="button"
                 variant="outline"
@@ -128,7 +150,7 @@ export default function CollectionPage() {
                 <aside
                   id="collection-filters"
                   aria-label="Collection filters"
-                  className="absolute left-0 top-full z-40 mt-2 max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-xl"
+                  className="absolute right-0 top-full z-40 mt-2 max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-xl"
                 >
                   <h2 className="mb-4 text-xl font-semibold">Filter & Sort</h2>
                   <div className="mb-5">
@@ -148,6 +170,7 @@ export default function CollectionPage() {
                       ))}
                     </div>
                   </div>
+                  
 
                   <div className="space-y-4">
                     <div className="space-y-2">
@@ -183,22 +206,8 @@ export default function CollectionPage() {
                 </aside>
               )}
             </div>
-
-            <div className="relative min-w-0 flex-1">
-              <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search your collection..."
-                className="w-full rounded-lg border border-border bg-card py-3 pl-12 pr-10 text-lg shadow-sm outline-none focus:ring-2 focus:ring-pink-300"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                aria-label="Search your collection"
-              />
-              {search && <button type="button" aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"><X className="size-5" /></button>}
-            </div>
-          </div>
-
-          <p className="mb-5 text-base text-muted-foreground">Showing {visibleCards.length} of {placeholderCards.length} cards</p>
+           </div>    
+          <p className="mb-5 text-xl text-muted-foreground">Showing {visibleCards.length} of {placeholderCards.length} cards</p>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
             {visibleCards.map((card) => <CollectionCard key={card.id} card={card} onOpen={() => setSelected(card)} />)}
           </div>
@@ -220,17 +229,16 @@ function CollectionCard({ card, onOpen }: { card: TcgCard; onOpen: () => void })
   return (
     <Card className="gap-0 pt-0 pb-4 shadow-md transition-shadow hover:shadow-lg">
       <button type="button" onClick={onOpen} className="text-left">
-        <div className={`flex items-center justify-between px-4 py-3 text-black ${cardColor}`}>
-          <span className="truncate text-lg font-extrabold uppercase tracking-wide">{card.name}</span>
+        <div className={` flex items-center justify-center px-4 py-3 text-black ${cardColor}`}>
+          <span className="  flex items-center text-lg font-extrabold uppercase tracking-wide">{card.name}</span>
         </div>
         <div className="flex gap-3 px-4 pt-4">
           <div className="flex h-44 flex-1 items-center justify-center rounded-md bg-muted text-base font-semibold text-muted-foreground">Picture</div>
-          <span className="text-base font-bold">{card.price}</span>
         </div>
-        <p className="px-4 pt-3 text-sm text-muted-foreground">{card.set} · {card.number}</p>
+        <p className="px-4 pt-3 text-xl text-muted-foreground">{card.set} · {card.number}</p>
       </button>
       <div className="mt-3 flex items-center px-4">
-        <span className={`rounded-full px-3 py-1 text-sm font-semibold text-black ${cardColor}`}>{card.finish}</span>
+        <span className={`rounded-full px-3 py-2 text-lg font-semibold text-white ${cardColor}`}>{card.finish}</span>
       </div>
     </Card>
   );

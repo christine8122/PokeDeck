@@ -70,7 +70,7 @@ export default function HomePage() {
 function CardStack() {
   const cards = [
     { className: "right-6 top-0 rotate-[-6deg] bg-yellow-400/90" },
-    { className: "right-24 top-16 rotate-[-14deg] bg-orange-400/80" },
+    { className: "right-24 top-16 rotate-[-14deg] bg-pink-500/90" },
     {
       className:
         "right-40 top-36 rotate-[-28deg] bg-indigo-400/80 ring-4 ring-blue-500",
