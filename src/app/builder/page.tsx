@@ -724,10 +724,10 @@ function BuilderCard({
         className="text-left"
       >
         <div
-          className={`flex items-center justify-between px-4 py-3 text-black ${cardColor}`}
+          className={`flex items-center justify-center p-3 text-white [text-shadow:2px_3px_4px_rgba(0,0,0,0.7)] ${cardColor}`}
         >
         {/* Might have to adjust the container specfically for this page to allow the cards to extend since Placeholder Deck is taking up a ton of space */}
-          <span className=" flex items-center justify-center  text-md font-extrabold uppercase tracking-wide">
+          <span className="flex items-center justify-center text-md font-extrabold uppercase tracking-wide">
             {card.name}
           </span>
           {qty > 0 && (

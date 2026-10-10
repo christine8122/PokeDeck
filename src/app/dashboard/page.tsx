@@ -153,10 +153,10 @@ function CollectionPreviewCard({ card }: { card: (typeof recentCards)[number] })
 
       {/* Colored header bar */}
       <div className={`flex items-center justify-between px-3 py-2 ${card.header}`}>
-        <span className="w-full p-1 text-center text-md font-extrabold uppercase tracking-wide">
+        <span className="w-full p-1 translate-x-2 text-center text-lg  text-white font-extrabold uppercase tracking-wide [text-shadow:2px_3px_4px_rgba(0,0,0,0.7)]">
           {card.name}
         </span>
-        <span className="rounded-full px-3 py-2 bg-white px-2 text-md font-semibold">
+        <span className="rounded-full px-2 py-1 bg-white px-2 text-md font-semibold">
           x{card.qty}
         </span>
       </div>

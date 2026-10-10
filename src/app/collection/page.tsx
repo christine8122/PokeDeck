@@ -230,7 +230,7 @@ function CollectionCard({ card, onOpen }: { card: TcgCard; onOpen: () => void })
     <Card className="gap-0 pt-0 pb-4 shadow-md transition-shadow hover:shadow-lg">
       <button type="button" onClick={onOpen} className="text-left">
         <div className={` flex items-center justify-center px-4 py-3 text-black ${cardColor}`}>
-          <span className="  flex items-center text-lg font-extrabold uppercase tracking-wide">{card.name}</span>
+          <span className="  flex items-center text-lg text-white font-extrabold uppercase tracking-wide [text-shadow:2px_3px_4px_rgba(0,0,0,0.7)]">{card.name}</span>
         </div>
         <div className="flex gap-3 px-4 pt-4">
           <div className="flex h-44 flex-1 items-center justify-center rounded-md bg-muted text-base font-semibold text-muted-foreground">Picture</div>
