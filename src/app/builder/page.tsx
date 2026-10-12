@@ -1,10 +1,11 @@
-
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Plus,
   Save,
   Search,
@@ -20,54 +21,269 @@ import {
   CardFooter,
   CardTitle,
 } from "@/components/ui/card";
+import { createClient } from "@/lib/supabase/client";
 
-// ---- Placeholder data ----
+// ---- Supabase settings ----
 
+// Change this if your table has a different name in Table Editor
+const CARDS_TABLE = "cards";
+
+// Supabase returns at most 1000 rows per request, so we load in batches
+const BATCH_SIZE = 1000;
+
+// How many cards show on each page of the grid
+const PAGE_SIZE = 24;
+
+// ---- Card data ----
+
+// One row exactly as it comes out of Supabase (everything is text)
+type CardRow = {
+  id: string;
+  name: string;
+  set: string;
+  variants: string | null;
+  types: string | null;
+  rarity: string | null;
+  hp: string | null;
+  stage: string | null;
+};
+
+// The cleaned-up version the page actually uses
 type TcgCard = {
   id: string;
   name: string;
-  type: string;
+  types: string[];
   rarity: string;
-  price: string;
   set: string;
   number: string;
-  finish: string;
+  finishes: string[];
+  hp: number | null;
+  stage: string;
+  price: string;
   owned: boolean;
 };
 
-const TYPES = [
-  "Grass",
-  "Fire",
-  "Water",
-  "Lightning",
-  "Psychic",
+// The `types` and `variants` columns are bitmasks: each option gets its own
+// number (1, 2, 4, 8, ...) and a card's value is the sum of its options.
+// Types are in alphabetical order (Grass is 7th, so Grass = 64).
+// Variants are in TCGdex's order: normal, reverse, holo, firstEdition, wPromo
+// (so Normal = 1, Reverse Holo = 2, Holo = 4, ...).
+const TYPE_BITS = [
+  "Colorless",
+  "Darkness",
+  "Dragon",
+  "Fairy",
   "Fighting",
+  "Fire",
+  "Grass",
+  "Lightning",
+  "Metal",
+  "Psychic",
+  "Water",
 ];
 
-const RARITIES = ["Common", "Uncommon", "Rare", "Rare Holo"];
-
-const SETS = [
-  "Placeholder Set A",
-  "Placeholder Set B",
-  "Placeholder Set C",
+const VARIANT_BITS = [
+  "Normal",
+  "Reverse Holo",
+  "Holo",
+  "First Edition",
+  "W Promo",
 ];
 
-const FINISHES = ["Normal", "Holo", "Reverse Holo"];
+// Turn a bitmask like "64" into a list of names like ["Grass"]
+function decodeBits(code: string | null, names: string[]) {
+  const value = Number(code);
+  if (!Number.isInteger(value) || value <= 0) return [];
+  return names.filter((_, i) => (value & (1 << i)) !== 0);
+}
 
-const placeholderCards: TcgCard[] = Array.from(
-  { length: 12 },
-  (_, i) => ({
-    id: String(i + 1),
-    name: `Placeholder ${i + 1}`,
-    type: TYPES[i % TYPES.length],
-    rarity: RARITIES[i % RARITIES.length],
-    price: "$0.00",
-    set: SETS[i % SETS.length],
-    number: `#${String(i + 1).padStart(3, "0")}`,
-    finish: FINISHES[i % FINISHES.length],
-    owned: i % 3 !== 2,
-  })
-);
+// Convert a Supabase row into the shape the page uses
+function rowToCard(row: CardRow): TcgCard {
+  const hp = Number(row.hp);
+
+  return {
+    id: row.id,
+    name: row.name,
+    types: decodeBits(row.types, TYPE_BITS),
+    // TCGdex uses "None" for promo cards that have no printed rarity
+    rarity: !row.rarity || row.rarity === "None" ? "Promo" : row.rarity,
+    set: row.set,
+    // The card number is the part of the id after the last dash: "2011bw-1" -> "1"
+    number: `#${row.id.split("-").pop()}`,
+    finishes: decodeBits(row.variants, VARIANT_BITS),
+    hp: Number.isFinite(hp) && hp > 0 ? hp : null,
+    stage: row.stage ?? "Unknown",
+    price: "—", // No price data in the table yet
+    owned: false, // TODO: hook up to the user's collection
+  };
+}
+
+// Trainer and Energy cards have no Pokémon type
+const NO_TYPE = "No type";
+
+// Types for filtering/display, using "No type" for Trainers and Energy
+const typesOrNone = (card: TcgCard) =>
+  card.types.length > 0 ? card.types : [NO_TYPE];
+
+// The first type is used for the card's color
+const primaryType = (card: TcgCard) => card.types[0] ?? NO_TYPE;
+
+// ---- Card images (fallback: fetched from the TCGdex API per card) ----
+
+// Remember each card's image request so we only ask TCGdex once per card
+const imageCache = new Map<string, Promise<string | null>>();
+
+function fetchCardImageBase(cardId: string) {
+  if (!imageCache.has(cardId)) {
+    const request = fetch(
+      `https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(cardId)}`
+    )
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { image?: string } | null) => data?.image ?? null)
+      .catch(() => {
+        imageCache.delete(cardId); // let it retry next time
+        return null;
+      });
+
+    imageCache.set(cardId, request);
+  }
+
+  return imageCache.get(cardId)!;
+}
+
+// Returns the image base URL, null if the card has no image, or undefined while loading
+function useCardImage(cardId: string) {
+  const [result, setResult] = useState<{
+    id: string;
+    url: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchCardImageBase(cardId).then((url) => {
+      if (!cancelled) setResult({ id: cardId, url });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cardId]);
+
+  return result?.id === cardId ? result.url : undefined;
+}
+
+// Some TCGdex image links are broken (the file isn't on their server).
+// Try each quality in order, and if they all fail, show the mini card instead.
+function useCardImageSrc(card: TcgCard, qualities: ("high" | "low")[]) {
+  const base = useCardImage(card.id);
+
+  // How many image files have failed so far for this card
+  const [failed, setFailed] = useState({ id: card.id, count: 0 });
+  const failCount = failed.id === card.id ? failed.count : 0;
+
+  if (base === undefined) return { status: "loading" as const };
+  if (base === null || failCount >= qualities.length) {
+    return { status: "missing" as const };
+  }
+
+  return {
+    status: "ok" as const,
+    src: `${base}/${qualities[failCount]}.webp`,
+    // When this file fails to load, move on to the next quality
+    onError: () => setFailed({ id: card.id, count: failCount + 1 }),
+  };
+}
+
+function CardImage({
+  card,
+  quality,
+  className,
+}: {
+  card: TcgCard;
+  quality: "low" | "high";
+  className: string;
+}) {
+  const image = useCardImageSrc(
+    card,
+    quality === "high" ? ["high", "low"] : ["low", "high"]
+  );
+
+  return (
+    <div className={className}>
+      {image.status === "loading" && "Loading..."}
+      {image.status === "missing" && <MiniCard card={card} quality={quality} />}
+      {image.status === "ok" && (
+        // Plain <img> on purpose: next/image would need TCGdex added to next.config
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={image.src}
+          src={image.src}
+          onError={image.onError}
+          alt={card.name}
+          loading="lazy"
+          className="h-auto w-full max-w-[245px] rounded-md"
+        />
+      )}
+    </div>
+  );
+}
+
+// Stand-in for cards TCGdex has no picture for: a simple card in the type color
+function MiniCard({
+  card,
+  quality,
+}: {
+  card: TcgCard;
+  quality: "low" | "high";
+}) {
+  const cardColor = getCardColor(primaryType(card));
+
+  return (
+    <div
+      role="img"
+      aria-label={`${card.name} (no image available)`}
+      className={`flex aspect-[245/337] flex-col rounded-lg p-2 shadow-sm ${cardColor} ${
+        // Grid: fill the width. Modal: fill the fixed-height box.
+        quality === "low" ? "w-full" : "h-full"
+      }`}
+    >
+      <div className="flex flex-1 flex-col rounded-md bg-white/90 p-3 text-left text-gray-800">
+        {/* Name and HP, like the top of a real card */}
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-base font-extrabold leading-tight">
+            {card.name}
+          </span>
+          {card.hp !== null && (
+            <span className="shrink-0 text-sm font-bold">
+              HP {card.hp}
+            </span>
+          )}
+        </div>
+
+        <span className="mt-1 text-xs font-medium text-gray-500">
+          {card.stage === "Unknown" ? "" : card.stage}
+        </span>
+
+        {/* Big type badge where the artwork would be */}
+        <div className="flex flex-1 items-center justify-center">
+          <span
+            className={`rounded-full px-4 py-2 text-sm font-bold text-white [text-shadow:1px_1px_2px_rgba(0,0,0,0.5)] ${cardColor}`}
+          >
+            {typesOrNone(card).join(" / ")}
+          </span>
+        </div>
+
+        <div className="flex items-end justify-between gap-2 text-xs text-gray-500">
+          <span>
+            {card.set} · {card.number}
+          </span>
+          <span className="italic">No image</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ---- Card colors ----
 
@@ -78,50 +294,65 @@ function getCardColor(type: string) {
   if (type === "Lightning") return "bg-yellow-300";
   if (type === "Psychic") return "bg-purple-500";
   if (type === "Fighting") return "bg-orange-400";
+  if (type === "Darkness") return "bg-gray-700";
+  if (type === "Metal") return "bg-slate-400";
+  if (type === "Dragon") return "bg-amber-600";
+  if (type === "Fairy") return "bg-pink-300";
 
   return "bg-gray-400";
 }
 
-// ---- Filter options ----
+// ---- Filters ----
 
-const uniqueSorted = (values: string[]) =>
-  [...new Set(values)].sort();
+const RARITY_ORDER = ["Common", "Uncommon", "Rare", "Rare Holo"];
 
-const typeOptions = uniqueSorted(
-  placeholderCards.map((card) => card.type)
-);
+const uniqueSorted = (values: string[]) => [...new Set(values)].sort();
 
-const rarityOptions = RARITIES.filter((rarity) =>
-  placeholderCards.some((card) => card.rarity === rarity)
-);
+// Known rarities in order first, anything else alphabetically after
+const rarityRank = (rarity: string) => {
+  const index = RARITY_ORDER.indexOf(rarity);
+  return index === -1 ? RARITY_ORDER.length : index;
+};
 
-const setOptions = uniqueSorted(
-  placeholderCards.map((card) => card.set)
-);
-
-const finishOptions = uniqueSorted(
-  placeholderCards.map((card) => card.finish)
-);
-
+// Type, rarity, set, and finish are lists so you can pick more than one of each
 type Filters = {
   search: string;
-  type: string;
-  rarity: string;
-  set: string;
-  finish: string;
+  type: string[];
+  rarity: string[];
+  set: string[];
+  finish: string[];
   sortOrder: string;
   ownedOnly: boolean;
 };
 
 const emptyFilters: Filters = {
   search: "",
-  type: "",
-  rarity: "",
-  set: "",
-  finish: "",
+  type: [],
+  rarity: [],
+  set: [],
+  finish: [],
   sortOrder: "az",
   ownedOnly: false,
 };
+
+// True if the card has at least one of the selected values (or nothing is selected)
+const matchesAny = (selected: string[], cardValues: string[]) =>
+  selected.length === 0 || cardValues.some((v) => selected.includes(v));
+
+// Names like "_____'s Pikachu" (a real promo card with a blank name line)
+// start with symbols. Sort those after the normal names instead of first.
+const startsWithLetterOrNumber = (name: string) => /^[a-z0-9]/i.test(name);
+
+// McDonald's promo sets have codes that start with a year, like "2014xy".
+// TCGdex has no images for most of them, so they go after regular sets.
+const isMcDonaldsSet = (set: string) => /^\d/.test(set);
+
+function compareNames(a: string, b: string) {
+  const aNormal = startsWithLetterOrNumber(a);
+  const bNormal = startsWithLetterOrNumber(b);
+  if (aNormal !== bNormal) return aNormal ? -1 : 1;
+  return a.localeCompare(b);
+}
 
 const DECK_LIMIT = 60;
 const COPY_LIMIT = 4;
@@ -134,11 +365,92 @@ type DeckEntry = {
 // ---- Builder Page ----
 
 export default function BuilderPage() {
+  const [cards, setCards] = useState<TcgCard[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const gridTopRef = useRef<HTMLDivElement>(null);
+
   const [deckName, setDeckName] = useState("Placeholder Deck");
   const [deck, setDeck] = useState<DeckEntry[]>([]);
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [saved, setSaved] = useState(false);
+
+  const [loadedSoFar, setLoadedSoFar] = useState(0);
+
+  // Load every card from Supabase, 1000 at a time, when the page opens
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+
+    async function loadAllCards() {
+      const rows: CardRow[] = [];
+
+      while (true) {
+        const { data, error } = await supabase
+          .from(CARDS_TABLE)
+          .select("id, name, set, variants, types, rarity, hp, stage")
+          // Sort by id (unique) so batches never skip or repeat a card
+          .order("id")
+          .range(rows.length, rows.length + BATCH_SIZE - 1);
+
+        if (cancelled) return;
+
+        if (error) {
+          setLoadError(error.message);
+          return;
+        }
+
+        rows.push(...((data ?? []) as CardRow[]));
+        setLoadedSoFar(rows.length);
+
+        // A batch smaller than BATCH_SIZE means we reached the end
+        if (!data || data.length < BATCH_SIZE) break;
+      }
+
+      setCards(rows.map(rowToCard));
+    }
+
+    loadAllCards();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const allCards = useMemo(() => cards ?? [], [cards]);
+
+  // Build the filter chips from the real data
+  const filterGroups: FilterGroup[] = useMemo(
+    () => [
+      {
+        key: "type",
+        label: "Pokémon Type",
+        // Real types A-Z, with "No type" (Trainers/Energy) always last
+        options: uniqueSorted(allCards.flatMap(typesOrNone)).sort(
+          (a, b) => Number(a === NO_TYPE) - Number(b === NO_TYPE)
+        ),
+      },
+      {
+        key: "rarity",
+        label: "Rarity",
+        options: uniqueSorted(allCards.map((c) => c.rarity)).sort(
+          (a, b) => rarityRank(a) - rarityRank(b) || a.localeCompare(b)
+        ),
+      },
+      {
+        key: "set",
+        label: "Set",
+        options: uniqueSorted(allCards.map((c) => c.set)),
+      },
+      {
+        key: "finish",
+        label: "Finish",
+        options: uniqueSorted(allCards.flatMap((c) => c.finishes)),
+      },
+    ],
+    [allCards]
+  );
 
   const totalCards = deck.reduce(
     (sum, entry) => sum + entry.qty,
@@ -149,12 +461,18 @@ export default function BuilderPage() {
     .filter((entry) => entry.card.owned)
     .reduce((sum, entry) => sum + entry.qty, 0);
 
+  // Any filter change also sends the grid back to page 1
+  function changeFilters(update: (prev: Filters) => Filters) {
+    setFilters(update);
+    setPage(1);
+  }
+
   // Update one filter at a time
   function updateFilter<K extends keyof Filters>(
     key: K,
     value: Filters[K]
   ) {
-    setFilters((prev) => ({
+    changeFilters((prev) => ({
       ...prev,
       [key]: value,
     }));
@@ -162,10 +480,10 @@ export default function BuilderPage() {
 
   const hasActiveFilters =
     filters.search !== "" ||
-    filters.type !== "" ||
-    filters.rarity !== "" ||
-    filters.set !== "" ||
-    filters.finish !== "" ||
+    filters.type.length > 0 ||
+    filters.rarity.length > 0 ||
+    filters.set.length > 0 ||
+    filters.finish.length > 0 ||
     filters.sortOrder !== "az" ||
     filters.ownedOnly;
 
@@ -173,24 +491,16 @@ export default function BuilderPage() {
   const visibleCards = useMemo(() => {
     const query = filters.search.trim().toLowerCase();
 
-    const matchingCards = placeholderCards.filter((card) => {
-      if (
-        query &&
-        !card.name.toLowerCase().includes(query)
-      )
+    // Inside a group a card can match ANY selected option (Fire OR Water),
+    // but it has to pass EVERY group that has something selected.
+    const matchingCards = allCards.filter((card) => {
+      if (query && !card.name.toLowerCase().includes(query))
         return false;
 
-      if (filters.type && card.type !== filters.type)
-        return false;
-
-      if (filters.rarity && card.rarity !== filters.rarity)
-        return false;
-
-      if (filters.set && card.set !== filters.set)
-        return false;
-
-      if (filters.finish && card.finish !== filters.finish)
-        return false;
+      if (!matchesAny(filters.type, typesOrNone(card))) return false;
+      if (!matchesAny(filters.rarity, [card.rarity])) return false;
+      if (!matchesAny(filters.set, [card.set])) return false;
+      if (!matchesAny(filters.finish, card.finishes)) return false;
 
       if (filters.ownedOnly && !card.owned)
         return false;
@@ -199,13 +509,51 @@ export default function BuilderPage() {
     });
 
     return matchingCards.sort((a, b) => {
+      // Pokémon first, then cards with no type (Trainers/Energy) at the end
+      const aHasType = a.types.length > 0;
+      const bHasType = b.types.length > 0;
+      if (aHasType !== bHasType) return aHasType ? -1 : 1;
+
+      let byName: number;
+
       if (filters.sortOrder === "za") {
-        return b.name.localeCompare(a.name);
+        // Still keep symbol names at the end when sorting Z-A
+        const aNormal = startsWithLetterOrNumber(a.name);
+        const bNormal = startsWithLetterOrNumber(b.name);
+        byName =
+          aNormal !== bNormal
+            ? aNormal ? -1 : 1
+            : b.name.localeCompare(a.name);
+      } else {
+        byName = compareNames(a.name, b.name);
       }
 
-      return a.name.localeCompare(b.name);
+      if (byName !== 0) return byName;
+
+      // Same name: regular sets always come before McDonald's promo sets
+      const aPromo = isMcDonaldsSet(a.set);
+      const bPromo = isMcDonaldsSet(b.set);
+      if (aPromo !== bPromo) return aPromo ? 1 : -1;
+
+      // Then by set code and card number so the order never jumps around
+      return (
+        a.set.localeCompare(b.set) ||
+        a.number.localeCompare(b.number, undefined, { numeric: true })
+      );
     });
-  }, [filters]);
+  }, [allCards, filters]);
+
+  // Only render one page of cards at a time so we don't fetch every image at once
+  const totalPages = Math.max(1, Math.ceil(visibleCards.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const firstIndex = (currentPage - 1) * PAGE_SIZE;
+  const shownCards = visibleCards.slice(firstIndex, firstIndex + PAGE_SIZE);
+
+  // Change page and scroll back up to the top of the grid
+  function goToPage(next: number) {
+    setPage(Math.min(Math.max(next, 1), totalPages));
+    gridTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   // Find how many copies of a card are in the deck
   const qtyInDeck = (id: string) =>
@@ -281,7 +629,7 @@ export default function BuilderPage() {
                     >
                       <span
                         className={`size-5 shrink-0 rounded-full ${getCardColor(
-                          card.type
+                          primaryType(card)
                         )}`}
                       />
 
@@ -370,9 +718,10 @@ export default function BuilderPage() {
 
             <FiltersDropdown
               filters={filters}
+              groups={filterGroups}
               onChange={updateFilter}
               onClear={() =>
-                setFilters((prev) => ({
+                changeFilters((prev) => ({
                   ...emptyFilters,
                   search: prev.search,
                   ownedOnly: prev.ownedOnly,
@@ -397,14 +746,21 @@ export default function BuilderPage() {
           </div>
 
           {/* Result count and clear all */}
-          <div className="mb-6 flex min-h-9 items-center justify-between gap-3">
+          <div
+            ref={gridTopRef}
+            className="mb-6 flex min-h-9 scroll-mt-6 items-center justify-between gap-3"
+          >
             <span className="text-xl text-muted-foreground">
-              Showing {visibleCards.length} of {placeholderCards.length} cards
+              {cards === null
+                ? `Loading cards... (${loadedSoFar} so far)`
+                : visibleCards.length === 0
+                  ? `Showing 0 of ${allCards.length} cards`
+                  : `Showing ${firstIndex + 1}–${firstIndex + shownCards.length} of ${visibleCards.length} cards`}
             </span>
             {hasActiveFilters && (
               <Button
                 variant="ghost"
-                onClick={() => setFilters(emptyFilters)}
+                onClick={() => changeFilters(() => emptyFilters)}
                 className="text-base"
               >
                 <X className="size-4" />
@@ -414,7 +770,22 @@ export default function BuilderPage() {
           </div>
 
           {/* Card grid */}
-          {visibleCards.length === 0 ? (
+          {loadError ? (
+            <div className="rounded-xl border border-dashed border-border py-16 text-center">
+              <p className="text-lg font-medium">
+                Couldn&apos;t load cards.
+              </p>
+              <p className="mt-2 text-base text-muted-foreground">
+                {loadError}
+              </p>
+            </div>
+          ) : cards === null ? (
+            <div className="rounded-xl border border-dashed border-border py-16 text-center">
+              <p className="text-lg font-medium">
+                Loading cards... ({loadedSoFar} so far)
+              </p>
+            </div>
+          ) : visibleCards.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border py-16 text-center">
 
               <p className="text-lg font-medium">
@@ -423,24 +794,34 @@ export default function BuilderPage() {
               <Button
                 variant="outline"
                 className="mt-4 text-base"
-                onClick={() => setFilters(emptyFilters)}
+                onClick={() => changeFilters(() => emptyFilters)}
               >
                 Clear filters
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-              {visibleCards.map((card) => (
-                <BuilderCard
-                  key={card.id}
-                  card={card}
-                  qty={qtyInDeck(card.id)}
-                  onOpen={() => setSelected(card)}
-                  onAdd={() => addToDeck(card)}
-                  disabled={!canAdd(card.id)}
+            <>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                {shownCards.map((card) => (
+                  <BuilderCard
+                    key={card.id}
+                    card={card}
+                    qty={qtyInDeck(card.id)}
+                    onOpen={() => setSelected(card)}
+                    onAdd={() => addToDeck(card)}
+                    disabled={!canAdd(card.id)}
+                  />
+                ))}
+              </div>
+
+              {totalPages > 1 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={goToPage}
                 />
-              ))}
-            </div>
+              )}
+            </>
           )}
         </section>
       </div>
@@ -468,50 +849,48 @@ type FilterKey =
   | "set"
   | "finish";
 
-const filterGroups: {
+type FilterGroup = {
   key: FilterKey;
   label: string;
   options: string[];
-}[] = [
-  {
-    key: "type",
-    label: "Pokémon Type",
-    options: typeOptions,
-  },
-  {
-    key: "rarity",
-    label: "Rarity",
-    options: rarityOptions,
-  },
-  {
-    key: "set",
-    label: "Set",
-    options: setOptions,
-  },
-  {
-    key: "finish",
-    label: "Finish",
-    options: finishOptions,
-  },
-];
+};
 
 function FiltersDropdown({
   filters,
+  groups,
   onChange,
   onClear,
 }: {
   filters: Filters;
-  onChange: (key: FilterKey | "sortOrder", value: string) => void;
+  groups: FilterGroup[];
+  onChange: <K extends FilterKey | "sortOrder">(
+    key: K,
+    value: Filters[K]
+  ) => void;
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // Total options picked across all groups, plus 1 if the sort was changed
   const activeCount =
-    filterGroups.filter(
-      (group) => filters[group.key] !== ""
-    ).length +
+    groups.reduce(
+      (sum, group) => sum + filters[group.key].length,
+      0
+    ) +
     (filters.sortOrder !== "az" ? 1 : 0);
+
+  // Add the option if it isn't picked yet, remove it if it is
+  function toggleOption(key: FilterKey, option: string) {
+    const current = filters[key];
+
+    onChange(
+      key,
+      current.includes(option)
+        ? current.filter((value) => value !== option)
+        : [...current, option]
+    );
+  }
 
   // Close dropdown when clicking outside or pressing Escape
   useEffect(() => {
@@ -577,7 +956,7 @@ function FiltersDropdown({
             Filter & Sort
           </h2>
           <div className="space-y-5">
-            {filterGroups.map((group) => (
+            {groups.map((group) => (
               <fieldset key={group.key}>
                 <legend className="mb-3 text-base font-medium">
                   {group.label}
@@ -585,7 +964,7 @@ function FiltersDropdown({
                 <div className="flex flex-wrap gap-2">
                   {group.options.map((option) => {
                     const isSelected =
-                      filters[group.key] === option;
+                      filters[group.key].includes(option);
 
                     return (
                       <Button
@@ -596,10 +975,7 @@ function FiltersDropdown({
                         }
                         aria-pressed={isSelected}
                         onClick={() =>
-                          onChange(
-                            group.key,
-                            isSelected ? "" : option
-                          )
+                          toggleOption(group.key, option)
                         }
                         className="text-sm"
                       >
@@ -666,6 +1042,86 @@ function FiltersDropdown({
     </div>
   );
 }
+// ---- Page numbers under the grid ----
+
+// Which page buttons to show, e.g. [1, "...", 4, 5, 6, "...", 20]
+function getPageItems(current: number, total: number) {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+
+  const items: (number | "...")[] = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+
+  if (start > 2) items.push("...");
+  for (let p = start; p <= end; p++) items.push(p);
+  if (end < total - 1) items.push("...");
+
+  items.push(total);
+  return items;
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <nav
+      aria-label="Card pages"
+      className="mt-8 flex flex-wrap items-center justify-center gap-2"
+    >
+      <Button
+        variant="outline"
+        className="text-base"
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+      >
+        <ChevronLeft className="size-4" />
+        Prev
+      </Button>
+
+      {getPageItems(currentPage, totalPages).map((item, i) =>
+        item === "..." ? (
+          <span
+            key={`dots-${i}`}
+            className="px-1 text-base text-muted-foreground"
+          >
+            …
+          </span>
+        ) : (
+          <Button
+            key={item}
+            variant={item === currentPage ? "default" : "outline"}
+            size="icon"
+            className="text-base"
+            aria-label={`Page ${item}`}
+            aria-current={item === currentPage ? "page" : undefined}
+            onClick={() => onPageChange(item)}
+          >
+            {item}
+          </Button>
+        )
+      )}
+
+      <Button
+        variant="outline"
+        className="text-base"
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+      >
+        Next
+        <ChevronRight className="size-4" />
+      </Button>
+    </nav>
+  );
+}
+
 // ---- Deck progress bar ----
 
 function DeckProgress({ total }: { total: number }) {
@@ -700,6 +1156,44 @@ function DeckProgress({ total }: { total: number }) {
 
 // ---- Card shown in the grid ----
 
+// How far the card tilts toward your mouse, in degrees
+const MAX_TILT = 12;
+
+// Real Pokémon cards have rounded corners of about this size
+const CARD_CORNERS = "rounded-[4.5%/3.3%]";
+
+// Just the card art (or the mini card if TCGdex has no picture)
+function CardArt({ card }: { card: TcgCard }) {
+  // High quality first because the grid shows the art bigger than the 245px "low" size,
+  // then low quality, then the mini card if both image files are broken
+  const image = useCardImageSrc(card, ["high", "low"]);
+
+  if (image.status === "loading") {
+    return (
+      <div
+        className={`aspect-[245/337] w-full animate-pulse bg-muted ${CARD_CORNERS}`}
+      />
+    );
+  }
+
+  if (image.status === "missing") {
+    return <MiniCard card={card} quality="low" />;
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      key={image.src}
+      src={image.src}
+      onError={image.onError}
+      alt={card.name}
+      loading="lazy"
+      draggable={false}
+      className={`block aspect-[245/337] w-full object-cover ${CARD_CORNERS}`}
+    />
+  );
+}
+
 function BuilderCard({
   card,
   qty,
@@ -713,56 +1207,79 @@ function BuilderCard({
   onAdd: () => void;
   disabled: boolean;
 }) {
-  const cardColor = getCardColor(card.type);
+  const tiltRef = useRef<HTMLDivElement>(null);
+
+  // Tilt the card toward the mouse and move the glare to follow it.
+  // We change the style directly instead of using state so it stays smooth.
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const el = tiltRef.current;
+    if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const rect = el.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width; // 0 = left edge, 1 = right edge
+    const y = (e.clientY - rect.top) / rect.height; // 0 = top edge, 1 = bottom edge
+
+    el.style.transform = `rotateX(${(0.5 - y) * MAX_TILT * 2}deg) rotateY(${
+      (x - 0.5) * MAX_TILT * 2
+    }deg) scale(1.04)`;
+    el.style.setProperty("--glare-x", `${x * 100}%`);
+    el.style.setProperty("--glare-y", `${y * 100}%`);
+  }
+
+  // Ease back to flat when the mouse leaves
+  function handleMouseLeave() {
+    if (tiltRef.current) tiltRef.current.style.transform = "";
+  }
 
   return (
-    <Card className=" gap-0 pt-0 pb-4 shadow-md transition-shadow hover:shadow-lg">
-
-      <button
-        type="button"
-        onClick={onOpen}
-        className="text-left"
+    <div className="[perspective:1000px]">
+      <div
+        ref={tiltRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className="group relative transition-transform duration-200 ease-out will-change-transform [transform-style:preserve-3d]"
       >
-        <div
-          className={`flex items-center justify-center p-3 text-white [text-shadow:2px_3px_4px_rgba(0,0,0,0.7)] ${cardColor}`}
+        {/* The card itself: click to open the details modal */}
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`View ${card.name} details`}
+          className={`relative block w-full shadow-md transition-shadow duration-200 group-hover:shadow-2xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-pink-300 ${CARD_CORNERS}`}
         >
-        {/* Might have to adjust the container specfically for this page to allow the cards to extend since Placeholder Deck is taking up a ton of space */}
-          <span className="flex items-center justify-center text-md font-extrabold uppercase tracking-wide">
-            {card.name}
-          </span>
-          {qty > 0 && (
-            <span className="rounded-full px-3 py-2 bg-white px-2 text-md font-semibold">
-              x{qty}
-            </span>
-          )}
-        </div>
-        <div className="flex gap-3 px-4 pt-4">
-          <div className="flex min-h-50  flex-1 items-center justify-center rounded-md bg-muted text-base font-semibold text-muted-foreground">
-            Picture
-          </div>
-        </div>
-        <p className="px-4 pt-3 text-lg text-muted-foreground">
-          {card.set} · {card.number}
-        </p>
-      </button>
+          <CardArt card={card} />
 
-      <div className="mt-3 flex items-center justify-between px-4">
-        <span
-          className={`rounded-full px-3 py-1 text-md font-semibold text-white ${cardColor}`}
-        >
-          {card.finish}
-        </span>
+          {/* Shiny glare that follows the mouse */}
+          <span
+            aria-hidden
+            className={`pointer-events-none absolute inset-0 opacity-0 mix-blend-overlay transition-opacity duration-200 group-hover:opacity-100 ${CARD_CORNERS}`}
+            style={{
+              background:
+                "radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 50%), rgba(255,255,255,0.6), transparent 55%)",
+            }}
+          />
+        </button>
+
+        {/* How many copies are in the deck */}
+        {qty > 0 && (
+          <span className="pointer-events-none absolute -right-2 -top-2 rounded-full bg-white px-3 py-1 text-md font-semibold shadow-md ring-1 ring-foreground/10 [transform:translateZ(40px)]">
+            x{qty}
+          </span>
+        )}
+
+        {/* Add to deck */}
         <Button
           variant="outline"
           size="icon"
           aria-label={`Add ${card.name} to deck`}
           onClick={onAdd}
           disabled={disabled}
+          className="absolute bottom-3 right-3 rounded-full bg-white shadow-lg [transform:translateZ(50px)]"
         >
           <Plus className="size-5" />
         </Button>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -781,7 +1298,7 @@ function CardDetailsModal({
   onAdd: () => void;
   disabled: boolean;
 }) {
-  const cardColor = getCardColor(card.type);
+  const cardColor = getCardColor(primaryType(card));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -795,11 +1312,13 @@ function CardDetailsModal({
   }, [onClose]);
 
   const details = [
-    { label: "Type", value: card.type },
+    { label: "Type", value: typesOrNone(card).join(" / ") },
+    { label: "Stage", value: card.stage },
+    { label: "HP", value: card.hp ?? "—" },
     { label: "Rarity", value: card.rarity },
     { label: "Set", value: card.set },
     { label: "Number", value: card.number },
-    { label: "Finish", value: card.finish },
+    { label: "Finish", value: card.finishes.join(" / ") || "Normal" },
     { label: "Price", value: card.price },
     { label: "Owned", value: card.owned ? "Yes" : "No" },
     {
@@ -842,9 +1361,11 @@ function CardDetailsModal({
 
         <CardContent className="grid gap-5 sm:grid-cols-[180px_1fr]">
 
-          <div className="flex h-56 items-center justify-center rounded-lg bg-muted text-base font-semibold text-muted-foreground">
-            Picture
-          </div>
+          <CardImage
+            card={card}
+            quality="high"
+            className="flex h-56 items-center justify-center rounded-lg bg-muted text-base font-semibold text-muted-foreground"
+          />
 
           <div>
             <dl className="space-y-3 text-base">
