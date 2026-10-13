@@ -10,6 +10,7 @@ import {
   Save,
   Search,
   SlidersHorizontal,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -27,11 +28,19 @@ import {
   getTypeColor,
   TiltCard,
 } from "@/components/custom/CardArt";
+import {
+  CARD_COLUMNS,
+  CARDS_TABLE,
+  cardNumberFromId,
+  cleanRarity,
+  decodeTypes,
+  decodeVariants,
+  isMcDonaldsSet,
+  parseHp,
+  type CardRow,
+} from "@/lib/tcg-cards";
 
 // ---- Supabase settings ----
-
-// Change this if your table has a different name in Table Editor
-const CARDS_TABLE = "cards";
 
 // Supabase returns at most 1000 rows per request, so we load in batches
 const BATCH_SIZE = 1000;
@@ -40,18 +49,6 @@ const BATCH_SIZE = 1000;
 const PAGE_SIZE = 24;
 
 // ---- Card data ----
-
-// One row exactly as it comes out of Supabase (everything is text)
-type CardRow = {
-  id: string;
-  name: string;
-  set: string;
-  variants: string | null;
-  types: string | null;
-  rarity: string | null;
-  hp: string | null;
-  stage: string | null;
-};
 
 // The cleaned-up version the page actually uses
 type TcgCard = {
@@ -68,55 +65,17 @@ type TcgCard = {
   owned: boolean;
 };
 
-// The `types` and `variants` columns are bitmasks: each option gets its own
-// number (1, 2, 4, 8, ...) and a card's value is the sum of its options.
-// Types are in alphabetical order (Grass is 7th, so Grass = 64).
-// Variants are in TCGdex's order: normal, reverse, holo, firstEdition, wPromo
-// (so Normal = 1, Reverse Holo = 2, Holo = 4, ...).
-const TYPE_BITS = [
-  "Colorless",
-  "Darkness",
-  "Dragon",
-  "Fairy",
-  "Fighting",
-  "Fire",
-  "Grass",
-  "Lightning",
-  "Metal",
-  "Psychic",
-  "Water",
-];
-
-const VARIANT_BITS = [
-  "Normal",
-  "Reverse Holo",
-  "Holo",
-  "First Edition",
-  "W Promo",
-];
-
-// Turn a bitmask like "64" into a list of names like ["Grass"]
-function decodeBits(code: string | null, names: string[]) {
-  const value = Number(code);
-  if (!Number.isInteger(value) || value <= 0) return [];
-  return names.filter((_, i) => (value & (1 << i)) !== 0);
-}
-
 // Convert a Supabase row into the shape the page uses
 function rowToCard(row: CardRow): TcgCard {
-  const hp = Number(row.hp);
-
   return {
     id: row.id,
     name: row.name,
-    types: decodeBits(row.types, TYPE_BITS),
-    // TCGdex uses "None" for promo cards that have no printed rarity
-    rarity: !row.rarity || row.rarity === "None" ? "Promo" : row.rarity,
+    types: decodeTypes(row.types),
+    rarity: cleanRarity(row.rarity),
     set: row.set,
-    // The card number is the part of the id after the last dash: "2011bw-1" -> "1"
-    number: `#${row.id.split("-").pop()}`,
-    finishes: decodeBits(row.variants, VARIANT_BITS),
-    hp: Number.isFinite(hp) && hp > 0 ? hp : null,
+    number: cardNumberFromId(row.id),
+    finishes: decodeVariants(row.variants),
+    hp: parseHp(row.hp),
     stage: row.stage ?? "Unknown",
     price: "—", // No price data in the table yet
     owned: false, // TODO: hook up to the user's collection
@@ -177,10 +136,6 @@ const matchesAny = (selected: string[], cardValues: string[]) =>
 // start with symbols. Sort those after the normal names instead of first.
 const startsWithLetterOrNumber = (name: string) => /^[a-z0-9]/i.test(name);
 
-// McDonald's promo sets have codes that start with a year, like "2014xy".
-// TCGdex has no images for most of them, so they go after regular sets.
-const isMcDonaldsSet = (set: string) => /^\d/.test(set);
-
 function compareNames(a: string, b: string) {
   const aNormal = startsWithLetterOrNumber(a);
   const bNormal = startsWithLetterOrNumber(b);
@@ -196,6 +151,19 @@ type DeckEntry = {
   qty: number;
 };
 
+// A deck you saved. Saved decks live in page state, so they reset on refresh.
+// TODO: store them in a Supabase table for the logged-in user.
+type SavedDeck = {
+  id: string;
+  name: string;
+  entries: DeckEntry[];
+};
+
+const NEW_DECK_NAME = "New Deck";
+
+const countCards = (entries: DeckEntry[]) =>
+  entries.reduce((sum, entry) => sum + entry.qty, 0);
+
 // ---- Builder Page ----
 
 export default function BuilderPage() {
@@ -204,11 +172,17 @@ export default function BuilderPage() {
   const [page, setPage] = useState(1);
   const gridTopRef = useRef<HTMLDivElement>(null);
 
-  const [deckName, setDeckName] = useState("Placeholder Deck");
+  // The deck you're editing right now
+  const [deckName, setDeckName] = useState(NEW_DECK_NAME);
   const [deck, setDeck] = useState<DeckEntry[]>([]);
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
-  const [saved, setSaved] = useState(false);
+
+  // Every deck you've saved, and which one is open (null = a new, unsaved deck)
+  const [savedDecks, setSavedDecks] = useState<SavedDeck[]>([]);
+  const [currentDeckId, setCurrentDeckId] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false); // changed since the last save
+  const [justSaved, setJustSaved] = useState(false);
 
   const [loadedSoFar, setLoadedSoFar] = useState(0);
 
@@ -223,7 +197,7 @@ export default function BuilderPage() {
       while (true) {
         const { data, error } = await supabase
           .from(CARDS_TABLE)
-          .select("id, name, set, variants, types, rarity, hp, stage")
+          .select(CARD_COLUMNS)
           // Sort by id (unique) so batches never skip or repeat a card
           .order("id")
           .range(rows.length, rows.length + BATCH_SIZE - 1);
@@ -397,11 +371,17 @@ export default function BuilderPage() {
     totalCards < DECK_LIMIT &&
     qtyInDeck(id) < COPY_LIMIT;
 
+  // Call this whenever the open deck changes
+  function markChanged() {
+    setIsDirty(true);
+    setJustSaved(false);
+  }
+
   // Add a card to the deck
   function addToDeck(card: TcgCard) {
     if (!canAdd(card.id)) return;
 
-    setSaved(false);
+    markChanged();
 
     setDeck((prev) =>
       prev.some((entry) => entry.card.id === card.id)
@@ -416,7 +396,7 @@ export default function BuilderPage() {
 
   // Remove one copy of a card
   function removeOne(id: string) {
-    setSaved(false);
+    markChanged();
 
     setDeck((prev) =>
       prev
@@ -428,6 +408,78 @@ export default function BuilderPage() {
         .filter((entry) => entry.qty > 0)
     );
   }
+
+  // ---- Saving and switching decks ----
+
+  // Save the open deck: update it if it was saved before, otherwise add it to My decks
+  function saveDeck() {
+    const name = deckName.trim() || "Untitled Deck";
+    const entries = deck.map((entry) => ({ ...entry }));
+
+    if (currentDeckId) {
+      setSavedDecks((prev) =>
+        prev.map((saved) =>
+          saved.id === currentDeckId ? { ...saved, name, entries } : saved
+        )
+      );
+    } else {
+      const id = crypto.randomUUID();
+      setSavedDecks((prev) => [...prev, { id, name, entries }]);
+      setCurrentDeckId(id);
+    }
+
+    setDeckName(name);
+    setIsDirty(false);
+    setJustSaved(true);
+  }
+
+  // Ask before throwing away unsaved changes. Returns true if it's okay to continue.
+  function okToLeaveDeck() {
+    return (
+      !isDirty ||
+      window.confirm(`"${deckName}" has unsaved changes. Discard them?`)
+    );
+  }
+
+  function openDeck(saved: SavedDeck) {
+    if (saved.id === currentDeckId || !okToLeaveDeck()) return;
+
+    setCurrentDeckId(saved.id);
+    setDeckName(saved.name);
+    setDeck(saved.entries.map((entry) => ({ ...entry })));
+    setIsDirty(false);
+    setJustSaved(false);
+  }
+
+  function clearToNewDeck() {
+    setCurrentDeckId(null);
+    setDeckName(NEW_DECK_NAME);
+    setDeck([]);
+    setIsDirty(false);
+    setJustSaved(false);
+  }
+
+  function startNewDeck() {
+    if (!okToLeaveDeck()) return;
+    clearToNewDeck();
+  }
+
+  function deleteDeck() {
+    if (!currentDeckId) return;
+    if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) return;
+
+    setSavedDecks((prev) => prev.filter((saved) => saved.id !== currentDeckId));
+    clearToNewDeck();
+  }
+
+  // Little status line under the Save button
+  const saveStatus = justSaved
+    ? "Saved! Decks stay until you refresh the page."
+    : currentDeckId && isDirty
+      ? "Unsaved changes"
+      : !currentDeckId && deck.length > 0
+        ? "Not saved yet"
+        : null;
 
   return (
     <Container>
@@ -442,7 +494,7 @@ export default function BuilderPage() {
                 value={deckName}
                 onChange={(e) => {
                   setDeckName(e.target.value);
-                  setSaved(false);
+                  markChanged();
                 }}
                 aria-label="Deck name"
                 className="w-full rounded-md bg-transparent text-2xl font-extrabold outline-none focus:ring-2 focus:ring-pink-300"
@@ -498,22 +550,89 @@ export default function BuilderPage() {
                 {ownedInDeck} of {totalCards} cards already in your collection
               </div>
 
-              {/* Save deck - UI only */}
-              <Button
-                className="w-full py-6 text-base"
-                onClick={() => setSaved(true)}
-                disabled={deck.length === 0}
-              >
-                <Save className="size-5" />
-                Save deck
-              </Button>
+              {/* Save (and delete, once it's been saved) */}
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 py-6 text-base"
+                  onClick={saveDeck}
+                  disabled={deck.length === 0 || (currentDeckId !== null && !isDirty)}
+                >
+                  <Save className="size-5" />
+                  {currentDeckId ? "Save changes" : "Save deck"}
+                </Button>
 
-              {saved && (
+                {currentDeckId && (
+                  <Button
+                    variant="outline"
+                    className="py-6"
+                    aria-label={`Delete ${deckName}`}
+                    onClick={deleteDeck}
+                  >
+                    <Trash2 className="size-5" />
+                  </Button>
+                )}
+              </div>
+
+              {saveStatus && (
                 <p className="text-center text-sm text-muted-foreground">
-                  Saved! (UI only, nothing is stored yet)
+                  {saveStatus}
                 </p>
               )}
 
+            </CardContent>
+          </Card>
+
+          {/* All saved decks */}
+          <Card className="mt-6 shadow-md">
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xl font-bold">My decks</h2>
+                <Button variant="outline" size="sm" onClick={startNewDeck}>
+                  <Plus className="size-4" />
+                  New deck
+                </Button>
+              </div>
+
+              {savedDecks.length === 0 ? (
+                <p className="py-2 text-sm text-muted-foreground">
+                  Decks you save will show up here.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {savedDecks.map((saved) => {
+                    const isOpen = saved.id === currentDeckId;
+                    const firstCard = saved.entries[0]?.card;
+
+                    return (
+                      <li key={saved.id}>
+                        <button
+                          type="button"
+                          onClick={() => openDeck(saved)}
+                          aria-current={isOpen ? "true" : undefined}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
+                            isOpen ? "bg-muted ring-1 ring-foreground/15" : "hover:bg-muted"
+                          }`}
+                        >
+                          <span
+                            className={`size-4 shrink-0 rounded-full ${getCardColor(
+                              firstCard ? primaryType(firstCard) : undefined
+                            )}`}
+                          />
+                          <span className="min-w-0 flex-1 truncate font-semibold">
+                            {saved.name}
+                            {isOpen && isDirty && (
+                              <span className="text-pink-500" title="Unsaved changes"> •</span>
+                            )}
+                          </span>
+                          <span className="shrink-0 text-sm text-muted-foreground">
+                            {countCards(saved.entries)} cards
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </aside>

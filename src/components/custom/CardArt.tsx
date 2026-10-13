@@ -236,10 +236,13 @@ export function CardImage({
 export function TiltCard({
   card,
   onOpen,
+  label,
   children,
 }: {
   card: CardArtInfo;
   onOpen: () => void;
+  // What clicking the card does, for screen readers. Defaults to "View <name> details".
+  label?: string;
   children?: React.ReactNode;
 }) {
   const tiltRef = useRef<HTMLDivElement>(null);
@@ -278,7 +281,7 @@ export function TiltCard({
         <button
           type="button"
           onClick={onOpen}
-          aria-label={`View ${card.name} details`}
+          aria-label={label ?? `View ${card.name} details`}
           className={`relative block w-full shadow-md transition-shadow duration-200 group-hover:shadow-2xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-pink-300 ${CARD_CORNERS}`}
         >
           <CardArt card={card} />
