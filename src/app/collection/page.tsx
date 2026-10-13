@@ -5,6 +5,7 @@ import { ChevronDown, Search, SlidersHorizontal, X } from "lucide-react";
 import Container from "@/components/custom/Container";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
+import { CardImage, TiltCard } from "@/components/custom/CardArt";
 
 type TcgCard = {
   id: string;
@@ -19,25 +20,26 @@ type TcgCard = {
 };
 
 // Placeholder data. Replace with API data later.
+// The ids are real TCGdex card ids (set-number) so the card images load.
 const placeholderCards: TcgCard[] = [
-  { id: "1", name: "Charmander", price: "$0.00", set: "Placeholder Set", number: "#001", finish: "Normal", rarity: "Common", owned: true, types: ["Fire"] },
-  { id: "2", name: "Squirtle", price: "$0.00", set: "Placeholder Set", number: "#002", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Water"] },
-  { id: "3", name: "Bulbasaur", price: "$0.00", set: "Placeholder Set", number: "#003", finish: "Reverse Holo", rarity: "Uncommon", owned: true, types: ["Grass"] },
-  { id: "4", name: "Vulpix", price: "$0.00", set: "Placeholder Set", number: "#004", finish: "Holo", rarity: "Rare", owned: true, types: ["Fire"] },
-  { id: "5", name: "Growlithe", price: "$0.00", set: "Placeholder Set", number: "#005", finish: "Reverse Holo", rarity: "Uncommon", owned: true, types: ["Fire"] },
-  { id: "6", name: "Psyduck", price: "$0.00", set: "Placeholder Set", number: "#006", finish: "Normal", rarity: "Common", owned: true, types: ["Water"] },
-  { id: "7", name: "Poliwag", price: "$0.00", set: "Placeholder Set", number: "#007", finish: "Reverse Holo", rarity: "Common", owned: true, types: ["Water"] },
-  { id: "8", name: "Oddish", price: "$0.00", set: "Placeholder Set", number: "#008", finish: "Normal", rarity: "Common", owned: true, types: ["Grass"] },
-  { id: "9", name: "Bellsprout", price: "$0.00", set: "Placeholder Set", number: "#009", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Grass"] },
-  { id: "10", name: "Pikachu", price: "$0.00", set: "Placeholder Set", number: "#010", finish: "Normal", rarity: "Common", owned: true, types: ["Lightning"] },
-  { id: "11", name: "Magnemite", price: "$0.00", set: "Placeholder Set", number: "#011", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Lightning"] },
-  { id: "12", name: "Jolteon", price: "$0.00", set: "Placeholder Set", number: "#012", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Lightning"] },
-  { id: "13", name: "Abra", price: "$0.00", set: "Placeholder Set", number: "#013", finish: "Normal", rarity: "Common", owned: true, types: ["Psychic"] },
-  { id: "14", name: "Kadabra", price: "$0.00", set: "Placeholder Set", number: "#014", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Psychic"] },
-  { id: "15", name: "Alakazam", price: "$0.00", set: "Placeholder Set", number: "#015", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Psychic"] },
-  { id: "16", name: "Machop", price: "$0.00", set: "Placeholder Set", number: "#016", finish: "Normal", rarity: "Common", owned: true, types: ["Fighting"] },
-  { id: "17", name: "Machoke", price: "$0.00", set: "Placeholder Set", number: "#017", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Fighting"] },
-  { id: "18", name: "Machamp", price: "$0.00", set: "Placeholder Set", number: "#018", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Fighting"] },
+  { id: "base1-46", name: "Charmander", price: "$0.00", set: "base1", number: "#46", finish: "Normal", rarity: "Common", owned: true, types: ["Fire"] },
+  { id: "base1-63", name: "Squirtle", price: "$0.00", set: "base1", number: "#63", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Water"] },
+  { id: "base1-44", name: "Bulbasaur", price: "$0.00", set: "base1", number: "#44", finish: "Reverse Holo", rarity: "Uncommon", owned: true, types: ["Grass"] },
+  { id: "base1-68", name: "Vulpix", price: "$0.00", set: "base1", number: "#68", finish: "Holo", rarity: "Rare", owned: true, types: ["Fire"] },
+  { id: "base1-28", name: "Growlithe", price: "$0.00", set: "base1", number: "#28", finish: "Reverse Holo", rarity: "Uncommon", owned: true, types: ["Fire"] },
+  { id: "fossil-53", name: "Psyduck", price: "$0.00", set: "fossil", number: "#53", finish: "Normal", rarity: "Common", owned: true, types: ["Water"] },
+  { id: "base1-59", name: "Poliwag", price: "$0.00", set: "base1", number: "#59", finish: "Reverse Holo", rarity: "Common", owned: true, types: ["Water"] },
+  { id: "jungle-58", name: "Oddish", price: "$0.00", set: "jungle", number: "#58", finish: "Normal", rarity: "Common", owned: true, types: ["Grass"] },
+  { id: "jungle-49", name: "Bellsprout", price: "$0.00", set: "jungle", number: "#49", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Grass"] },
+  { id: "base1-58", name: "Pikachu", price: "$0.00", set: "base1", number: "#58", finish: "Normal", rarity: "Common", owned: true, types: ["Lightning"] },
+  { id: "base1-53", name: "Magnemite", price: "$0.00", set: "base1", number: "#53", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Lightning"] },
+  { id: "jungle-4", name: "Jolteon", price: "$0.00", set: "jungle", number: "#4", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Lightning"] },
+  { id: "base1-43", name: "Abra", price: "$0.00", set: "base1", number: "#43", finish: "Normal", rarity: "Common", owned: true, types: ["Psychic"] },
+  { id: "base1-32", name: "Kadabra", price: "$0.00", set: "base1", number: "#32", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Psychic"] },
+  { id: "base1-1", name: "Alakazam", price: "$0.00", set: "base1", number: "#1", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Psychic"] },
+  { id: "base1-52", name: "Machop", price: "$0.00", set: "base1", number: "#52", finish: "Normal", rarity: "Common", owned: true, types: ["Fighting"] },
+  { id: "base1-34", name: "Machoke", price: "$0.00", set: "base1", number: "#34", finish: "Reverse Holo", rarity: "Uncommon", owned: false, types: ["Fighting"] },
+  { id: "base1-8", name: "Machamp", price: "$0.00", set: "base1", number: "#8", finish: "Holo", rarity: "Rare Holo", owned: true, types: ["Fighting"] },
 ];
 
 const TYPES = ["All", "Grass", "Fire", "Water", "Lightning", "Psychic", "Fighting", "Darkness", "Metal", "Dragon", "Colorless", "Fairy"];
@@ -208,7 +210,8 @@ export default function CollectionPage() {
             </div>
            </div>    
           <p className="mb-5 text-xl text-muted-foreground">Showing {visibleCards.length} of {placeholderCards.length} cards</p>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          {/* No sidebar on this page, so 4 across on big screens keeps the cards from getting huge */}
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {visibleCards.map((card) => <CollectionCard key={card.id} card={card} onOpen={() => setSelected(card)} />)}
           </div>
           {visibleCards.length === 0 && (
@@ -224,24 +227,9 @@ export default function CollectionPage() {
   );
 }
 
+// Just the card art, tilting toward the mouse. Click it to open the details.
 function CollectionCard({ card, onOpen }: { card: TcgCard; onOpen: () => void }) {
-  const cardColor = getCardColor(card.types);
-  return (
-    <Card className="gap-0 pt-0 pb-4 shadow-md transition-shadow hover:shadow-lg">
-      <button type="button" onClick={onOpen} className="text-left">
-        <div className={` flex items-center justify-center px-4 py-3 text-black ${cardColor}`}>
-          <span className="  flex items-center text-lg text-white font-extrabold uppercase tracking-wide [text-shadow:2px_3px_4px_rgba(0,0,0,0.7)]">{card.name}</span>
-        </div>
-        <div className="flex gap-3 px-4 pt-4">
-          <div className="flex h-44 flex-1 items-center justify-center rounded-md bg-muted text-base font-semibold text-muted-foreground">Picture</div>
-        </div>
-        <p className="px-4 pt-3 text-xl text-muted-foreground">{card.set} · {card.number}</p>
-      </button>
-      <div className="mt-3 flex items-center px-4">
-        <span className={`rounded-full px-3 py-2 text-lg font-semibold text-white ${cardColor}`}>{card.finish}</span>
-      </div>
-    </Card>
-  );
+  return <TiltCard card={card} onOpen={onOpen} />;
 }
 
 function CardDetailsModal({ card, onClose }: { card: TcgCard; onClose: () => void }) {
@@ -270,7 +258,7 @@ function CardDetailsModal({ card, onClose }: { card: TcgCard; onClose: () => voi
           <Button type="button" variant="ghost" size="icon-sm" className="text-black" aria-label="Close" onClick={onClose}><X /></Button>
         </div>
         <CardContent className="grid gap-5 sm:grid-cols-[180px_1fr]">
-          <div className="flex h-56 items-center justify-center rounded-lg bg-muted text-base font-semibold text-muted-foreground">Picture</div>
+          <CardImage card={card} className="flex h-56 items-center justify-center rounded-lg bg-muted text-base font-semibold text-muted-foreground" />
           <div>
             <dl className="space-y-3 text-base">
               {details.map((detail) => (

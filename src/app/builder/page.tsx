@@ -22,6 +22,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import {
+  CardImage,
+  getTypeColor,
+  TiltCard,
+} from "@/components/custom/CardArt";
 
 // ---- Supabase settings ----
 
@@ -128,179 +133,8 @@ const typesOrNone = (card: TcgCard) =>
 // The first type is used for the card's color
 const primaryType = (card: TcgCard) => card.types[0] ?? NO_TYPE;
 
-// ---- Card images (fallback: fetched from the TCGdex API per card) ----
-
-// Remember each card's image request so we only ask TCGdex once per card
-const imageCache = new Map<string, Promise<string | null>>();
-
-function fetchCardImageBase(cardId: string) {
-  if (!imageCache.has(cardId)) {
-    const request = fetch(
-      `https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(cardId)}`
-    )
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { image?: string } | null) => data?.image ?? null)
-      .catch(() => {
-        imageCache.delete(cardId); // let it retry next time
-        return null;
-      });
-
-    imageCache.set(cardId, request);
-  }
-
-  return imageCache.get(cardId)!;
-}
-
-// Returns the image base URL, null if the card has no image, or undefined while loading
-function useCardImage(cardId: string) {
-  const [result, setResult] = useState<{
-    id: string;
-    url: string | null;
-  } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchCardImageBase(cardId).then((url) => {
-      if (!cancelled) setResult({ id: cardId, url });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cardId]);
-
-  return result?.id === cardId ? result.url : undefined;
-}
-
-// Some TCGdex image links are broken (the file isn't on their server).
-// Try each quality in order, and if they all fail, show the mini card instead.
-function useCardImageSrc(card: TcgCard, qualities: ("high" | "low")[]) {
-  const base = useCardImage(card.id);
-
-  // How many image files have failed so far for this card
-  const [failed, setFailed] = useState({ id: card.id, count: 0 });
-  const failCount = failed.id === card.id ? failed.count : 0;
-
-  if (base === undefined) return { status: "loading" as const };
-  if (base === null || failCount >= qualities.length) {
-    return { status: "missing" as const };
-  }
-
-  return {
-    status: "ok" as const,
-    src: `${base}/${qualities[failCount]}.webp`,
-    // When this file fails to load, move on to the next quality
-    onError: () => setFailed({ id: card.id, count: failCount + 1 }),
-  };
-}
-
-function CardImage({
-  card,
-  quality,
-  className,
-}: {
-  card: TcgCard;
-  quality: "low" | "high";
-  className: string;
-}) {
-  const image = useCardImageSrc(
-    card,
-    quality === "high" ? ["high", "low"] : ["low", "high"]
-  );
-
-  return (
-    <div className={className}>
-      {image.status === "loading" && "Loading..."}
-      {image.status === "missing" && <MiniCard card={card} quality={quality} />}
-      {image.status === "ok" && (
-        // Plain <img> on purpose: next/image would need TCGdex added to next.config
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={image.src}
-          src={image.src}
-          onError={image.onError}
-          alt={card.name}
-          loading="lazy"
-          className="h-auto w-full max-w-[245px] rounded-md"
-        />
-      )}
-    </div>
-  );
-}
-
-// Stand-in for cards TCGdex has no picture for: a simple card in the type color
-function MiniCard({
-  card,
-  quality,
-}: {
-  card: TcgCard;
-  quality: "low" | "high";
-}) {
-  const cardColor = getCardColor(primaryType(card));
-
-  return (
-    <div
-      role="img"
-      aria-label={`${card.name} (no image available)`}
-      className={`flex aspect-[245/337] flex-col rounded-lg p-2 shadow-sm ${cardColor} ${
-        // Grid: fill the width. Modal: fill the fixed-height box.
-        quality === "low" ? "w-full" : "h-full"
-      }`}
-    >
-      <div className="flex flex-1 flex-col rounded-md bg-white/90 p-3 text-left text-gray-800">
-        {/* Name and HP, like the top of a real card */}
-        <div className="flex items-start justify-between gap-2">
-          <span className="text-base font-extrabold leading-tight">
-            {card.name}
-          </span>
-          {card.hp !== null && (
-            <span className="shrink-0 text-sm font-bold">
-              HP {card.hp}
-            </span>
-          )}
-        </div>
-
-        <span className="mt-1 text-xs font-medium text-gray-500">
-          {card.stage === "Unknown" ? "" : card.stage}
-        </span>
-
-        {/* Big type badge where the artwork would be */}
-        <div className="flex flex-1 items-center justify-center">
-          <span
-            className={`rounded-full px-4 py-2 text-sm font-bold text-white [text-shadow:1px_1px_2px_rgba(0,0,0,0.5)] ${cardColor}`}
-          >
-            {typesOrNone(card).join(" / ")}
-          </span>
-        </div>
-
-        <div className="flex items-end justify-between gap-2 text-xs text-gray-500">
-          <span>
-            {card.set} · {card.number}
-          </span>
-          <span className="italic">No image</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---- Card colors ----
-
-function getCardColor(type: string) {
-  if (type === "Fire") return "bg-pink-500";
-  if (type === "Water") return "bg-blue-400";
-  if (type === "Grass") return "bg-green-400";
-  if (type === "Lightning") return "bg-yellow-300";
-  if (type === "Psychic") return "bg-purple-500";
-  if (type === "Fighting") return "bg-orange-400";
-  if (type === "Darkness") return "bg-gray-700";
-  if (type === "Metal") return "bg-slate-400";
-  if (type === "Dragon") return "bg-amber-600";
-  if (type === "Fairy") return "bg-pink-300";
-
-  return "bg-gray-400";
-}
+// Card colors come from the shared CardArt component so every page matches
+const getCardColor = getTypeColor;
 
 // ---- Filters ----
 
@@ -1156,44 +990,6 @@ function DeckProgress({ total }: { total: number }) {
 
 // ---- Card shown in the grid ----
 
-// How far the card tilts toward your mouse, in degrees
-const MAX_TILT = 12;
-
-// Real Pokémon cards have rounded corners of about this size
-const CARD_CORNERS = "rounded-[4.5%/3.3%]";
-
-// Just the card art (or the mini card if TCGdex has no picture)
-function CardArt({ card }: { card: TcgCard }) {
-  // High quality first because the grid shows the art bigger than the 245px "low" size,
-  // then low quality, then the mini card if both image files are broken
-  const image = useCardImageSrc(card, ["high", "low"]);
-
-  if (image.status === "loading") {
-    return (
-      <div
-        className={`aspect-[245/337] w-full animate-pulse bg-muted ${CARD_CORNERS}`}
-      />
-    );
-  }
-
-  if (image.status === "missing") {
-    return <MiniCard card={card} quality="low" />;
-  }
-
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      key={image.src}
-      src={image.src}
-      onError={image.onError}
-      alt={card.name}
-      loading="lazy"
-      draggable={false}
-      className={`block aspect-[245/337] w-full object-cover ${CARD_CORNERS}`}
-    />
-  );
-}
-
 function BuilderCard({
   card,
   qty,
@@ -1207,79 +1003,27 @@ function BuilderCard({
   onAdd: () => void;
   disabled: boolean;
 }) {
-  const tiltRef = useRef<HTMLDivElement>(null);
-
-  // Tilt the card toward the mouse and move the glare to follow it.
-  // We change the style directly instead of using state so it stays smooth.
-  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    const el = tiltRef.current;
-    if (!el) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-    const rect = el.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width; // 0 = left edge, 1 = right edge
-    const y = (e.clientY - rect.top) / rect.height; // 0 = top edge, 1 = bottom edge
-
-    el.style.transform = `rotateX(${(0.5 - y) * MAX_TILT * 2}deg) rotateY(${
-      (x - 0.5) * MAX_TILT * 2
-    }deg) scale(1.04)`;
-    el.style.setProperty("--glare-x", `${x * 100}%`);
-    el.style.setProperty("--glare-y", `${y * 100}%`);
-  }
-
-  // Ease back to flat when the mouse leaves
-  function handleMouseLeave() {
-    if (tiltRef.current) tiltRef.current.style.transform = "";
-  }
-
   return (
-    <div className="[perspective:1000px]">
-      <div
-        ref={tiltRef}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        className="group relative transition-transform duration-200 ease-out will-change-transform [transform-style:preserve-3d]"
+    <TiltCard card={card} onOpen={onOpen}>
+      {/* How many copies are in the deck */}
+      {qty > 0 && (
+        <span className="pointer-events-none absolute -right-2 -top-2 rounded-full bg-white px-3 py-1 text-md font-semibold shadow-md ring-1 ring-foreground/10 [transform:translateZ(40px)]">
+          x{qty}
+        </span>
+      )}
+
+      {/* Add to deck */}
+      <Button
+        variant="outline"
+        size="icon"
+        aria-label={`Add ${card.name} to deck`}
+        onClick={onAdd}
+        disabled={disabled}
+        className="absolute bottom-3 right-3 rounded-full bg-white shadow-lg [transform:translateZ(50px)]"
       >
-        {/* The card itself: click to open the details modal */}
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-label={`View ${card.name} details`}
-          className={`relative block w-full shadow-md transition-shadow duration-200 group-hover:shadow-2xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-pink-300 ${CARD_CORNERS}`}
-        >
-          <CardArt card={card} />
-
-          {/* Shiny glare that follows the mouse */}
-          <span
-            aria-hidden
-            className={`pointer-events-none absolute inset-0 opacity-0 mix-blend-overlay transition-opacity duration-200 group-hover:opacity-100 ${CARD_CORNERS}`}
-            style={{
-              background:
-                "radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 50%), rgba(255,255,255,0.6), transparent 55%)",
-            }}
-          />
-        </button>
-
-        {/* How many copies are in the deck */}
-        {qty > 0 && (
-          <span className="pointer-events-none absolute -right-2 -top-2 rounded-full bg-white px-3 py-1 text-md font-semibold shadow-md ring-1 ring-foreground/10 [transform:translateZ(40px)]">
-            x{qty}
-          </span>
-        )}
-
-        {/* Add to deck */}
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label={`Add ${card.name} to deck`}
-          onClick={onAdd}
-          disabled={disabled}
-          className="absolute bottom-3 right-3 rounded-full bg-white shadow-lg [transform:translateZ(50px)]"
-        >
-          <Plus className="size-5" />
-        </Button>
-      </div>
-    </div>
+        <Plus className="size-5" />
+      </Button>
+    </TiltCard>
   );
 }
 
@@ -1363,7 +1107,6 @@ function CardDetailsModal({
 
           <CardImage
             card={card}
-            quality="high"
             className="flex h-56 items-center justify-center rounded-lg bg-muted text-base font-semibold text-muted-foreground"
           />
 
