@@ -16,18 +16,9 @@ import {
 
 import Container from "@/components/custom/Container";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
-import {
-  CardImage,
-  getTypeColor,
-  TiltCard,
-} from "@/components/custom/CardArt";
+import { CardImage, getTypeColor, TiltCard } from "@/components/custom/CardArt";
 import {
   CARD_COLUMNS,
   CARDS_TABLE,
@@ -39,6 +30,13 @@ import {
   parseHp,
   type CardRow,
 } from "@/lib/tcg-cards";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ---- Supabase settings ----
 
@@ -236,14 +234,14 @@ export default function BuilderPage() {
         label: "Pokémon Type",
         // Real types A-Z, with "No type" (Trainers/Energy) always last
         options: uniqueSorted(allCards.flatMap(typesOrNone)).sort(
-          (a, b) => Number(a === NO_TYPE) - Number(b === NO_TYPE)
+          (a, b) => Number(a === NO_TYPE) - Number(b === NO_TYPE),
         ),
       },
       {
         key: "rarity",
         label: "Rarity",
         options: uniqueSorted(allCards.map((c) => c.rarity)).sort(
-          (a, b) => rarityRank(a) - rarityRank(b) || a.localeCompare(b)
+          (a, b) => rarityRank(a) - rarityRank(b) || a.localeCompare(b),
         ),
       },
       {
@@ -257,13 +255,10 @@ export default function BuilderPage() {
         options: uniqueSorted(allCards.flatMap((c) => c.finishes)),
       },
     ],
-    [allCards]
+    [allCards],
   );
 
-  const totalCards = deck.reduce(
-    (sum, entry) => sum + entry.qty,
-    0
-  );
+  const totalCards = deck.reduce((sum, entry) => sum + entry.qty, 0);
 
   const ownedInDeck = deck
     .filter((entry) => entry.card.owned)
@@ -276,10 +271,7 @@ export default function BuilderPage() {
   }
 
   // Update one filter at a time
-  function updateFilter<K extends keyof Filters>(
-    key: K,
-    value: Filters[K]
-  ) {
+  function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     changeFilters((prev) => ({
       ...prev,
       [key]: value,
@@ -302,16 +294,14 @@ export default function BuilderPage() {
     // Inside a group a card can match ANY selected option (Fire OR Water),
     // but it has to pass EVERY group that has something selected.
     const matchingCards = allCards.filter((card) => {
-      if (query && !card.name.toLowerCase().includes(query))
-        return false;
+      if (query && !card.name.toLowerCase().includes(query)) return false;
 
       if (!matchesAny(filters.type, typesOrNone(card))) return false;
       if (!matchesAny(filters.rarity, [card.rarity])) return false;
       if (!matchesAny(filters.set, [card.set])) return false;
       if (!matchesAny(filters.finish, card.finishes)) return false;
 
-      if (filters.ownedOnly && !card.owned)
-        return false;
+      if (filters.ownedOnly && !card.owned) return false;
 
       return true;
     });
@@ -330,7 +320,9 @@ export default function BuilderPage() {
         const bNormal = startsWithLetterOrNumber(b.name);
         byName =
           aNormal !== bNormal
-            ? aNormal ? -1 : 1
+            ? aNormal
+              ? -1
+              : 1
             : b.name.localeCompare(a.name);
       } else {
         byName = compareNames(a.name, b.name);
@@ -368,8 +360,7 @@ export default function BuilderPage() {
     deck.find((entry) => entry.card.id === id)?.qty ?? 0;
 
   const canAdd = (id: string) =>
-    totalCards < DECK_LIMIT &&
-    qtyInDeck(id) < COPY_LIMIT;
+    totalCards < DECK_LIMIT && qtyInDeck(id) < COPY_LIMIT;
 
   // Call this whenever the open deck changes
   function markChanged() {
@@ -388,9 +379,9 @@ export default function BuilderPage() {
         ? prev.map((entry) =>
             entry.card.id === card.id
               ? { ...entry, qty: entry.qty + 1 }
-              : entry
+              : entry,
           )
-        : [...prev, { card, qty: 1 }]
+        : [...prev, { card, qty: 1 }],
     );
   }
 
@@ -401,11 +392,9 @@ export default function BuilderPage() {
     setDeck((prev) =>
       prev
         .map((entry) =>
-          entry.card.id === id
-            ? { ...entry, qty: entry.qty - 1 }
-            : entry
+          entry.card.id === id ? { ...entry, qty: entry.qty - 1 } : entry,
         )
-        .filter((entry) => entry.qty > 0)
+        .filter((entry) => entry.qty > 0),
     );
   }
 
@@ -419,8 +408,8 @@ export default function BuilderPage() {
     if (currentDeckId) {
       setSavedDecks((prev) =>
         prev.map((saved) =>
-          saved.id === currentDeckId ? { ...saved, name, entries } : saved
-        )
+          saved.id === currentDeckId ? { ...saved, name, entries } : saved,
+        ),
       );
     } else {
       const id = crypto.randomUUID();
@@ -484,12 +473,10 @@ export default function BuilderPage() {
   return (
     <Container>
       <div className="grid gap-8 lg:grid-cols-[300px_1fr]">
-
         {/* Left side: Deck list */}
         <aside className="lg:sticky lg:top-6 lg:self-start">
           <Card className="shadow-md">
             <CardContent className="space-y-5">
-
               <input
                 value={deckName}
                 onChange={(e) => {
@@ -509,13 +496,10 @@ export default function BuilderPage() {
               ) : (
                 <ul className="max-h-96 space-y-2 overflow-y-auto">
                   {deck.map(({ card, qty }) => (
-                    <li
-                      key={card.id}
-                      className="flex items-center gap-3 py-2"
-                    >
+                    <li key={card.id} className="flex items-center gap-3 py-2">
                       <span
                         className={`size-5 shrink-0 rounded-full ${getCardColor(
-                          primaryType(card)
+                          primaryType(card),
                         )}`}
                       />
 
@@ -527,9 +511,7 @@ export default function BuilderPage() {
                         {card.name}
                       </button>
 
-                      <span className="text-sm font-extrabold">
-                        x{qty}
-                      </span>
+                      <span className="text-sm font-extrabold">x{qty}</span>
 
                       <button
                         type="button"
@@ -555,7 +537,9 @@ export default function BuilderPage() {
                 <Button
                   className="flex-1 py-6 text-base"
                   onClick={saveDeck}
-                  disabled={deck.length === 0 || (currentDeckId !== null && !isDirty)}
+                  disabled={
+                    deck.length === 0 || (currentDeckId !== null && !isDirty)
+                  }
                 >
                   <Save className="size-5" />
                   {currentDeckId ? "Save changes" : "Save deck"}
@@ -578,7 +562,6 @@ export default function BuilderPage() {
                   {saveStatus}
                 </p>
               )}
-
             </CardContent>
           </Card>
 
@@ -610,18 +593,26 @@ export default function BuilderPage() {
                           onClick={() => openDeck(saved)}
                           aria-current={isOpen ? "true" : undefined}
                           className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
-                            isOpen ? "bg-muted ring-1 ring-foreground/15" : "hover:bg-muted"
+                            isOpen
+                              ? "bg-muted ring-1 ring-foreground/15"
+                              : "hover:bg-muted"
                           }`}
                         >
                           <span
                             className={`size-4 shrink-0 rounded-full ${getCardColor(
-                              firstCard ? primaryType(firstCard) : undefined
+                              firstCard ? primaryType(firstCard) : undefined,
                             )}`}
                           />
                           <span className="min-w-0 flex-1 truncate font-semibold">
                             {saved.name}
                             {isOpen && isDirty && (
-                              <span className="text-pink-500" title="Unsaved changes"> •</span>
+                              <span
+                                className="text-pink-500"
+                                title="Unsaved changes"
+                              >
+                                {" "}
+                                •
+                              </span>
                             )}
                           </span>
                           <span className="shrink-0 text-sm text-muted-foreground">
@@ -639,19 +630,15 @@ export default function BuilderPage() {
 
         {/* Right side: Search and cards */}
         <section className="min-w-0">
-
           {/* Search, Filters and Owned */}
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
 
               <input
                 type="text"
                 value={filters.search}
-                onChange={(e) =>
-                  updateFilter("search", e.target.value)
-                }
+                onChange={(e) => updateFilter("search", e.target.value)}
                 placeholder="Search all cards..."
                 aria-label="Search cards by name"
                 className="w-full rounded-lg border border-border bg-card py-3 pl-12 pr-10 text-lg shadow-sm outline-none focus:ring-2 focus:ring-pink-300"
@@ -684,9 +671,7 @@ export default function BuilderPage() {
 
             <button
               type="button"
-              onClick={() =>
-                updateFilter("ownedOnly", !filters.ownedOnly)
-              }
+              onClick={() => updateFilter("ownedOnly", !filters.ownedOnly)}
               aria-pressed={filters.ownedOnly}
               className={`rounded-xl px-5 py-3 text-base font-medium transition-colors ${
                 filters.ownedOnly
@@ -725,9 +710,7 @@ export default function BuilderPage() {
           {/* Card grid */}
           {loadError ? (
             <div className="rounded-xl border border-dashed border-border py-16 text-center">
-              <p className="text-lg font-medium">
-                Couldn&apos;t load cards.
-              </p>
+              <p className="text-lg font-medium">Couldn&apos;t load cards.</p>
               <p className="mt-2 text-base text-muted-foreground">
                 {loadError}
               </p>
@@ -740,7 +723,6 @@ export default function BuilderPage() {
             </div>
           ) : visibleCards.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border py-16 text-center">
-
               <p className="text-lg font-medium">
                 No cards match those filters.
               </p>
@@ -789,18 +771,13 @@ export default function BuilderPage() {
           disabled={!canAdd(selected.id)}
         />
       )}
-
     </Container>
   );
 }
 
 // ---- Filter dropdown ----
 
-type FilterKey =
-  | "type"
-  | "rarity"
-  | "set"
-  | "finish";
+type FilterKey = "type" | "rarity" | "set" | "finish";
 
 type FilterGroup = {
   key: FilterKey;
@@ -818,7 +795,7 @@ function FiltersDropdown({
   groups: FilterGroup[];
   onChange: <K extends FilterKey | "sortOrder">(
     key: K,
-    value: Filters[K]
+    value: Filters[K],
   ) => void;
   onClear: () => void;
 }) {
@@ -827,22 +804,12 @@ function FiltersDropdown({
 
   // Total options picked across all groups, plus 1 if the sort was changed
   const activeCount =
-    groups.reduce(
-      (sum, group) => sum + filters[group.key].length,
-      0
-    ) +
+    groups.reduce((sum, group) => sum + filters[group.key].length, 0) +
     (filters.sortOrder !== "az" ? 1 : 0);
 
   // Add the option if it isn't picked yet, remove it if it is
-  function toggleOption(key: FilterKey, option: string) {
-    const current = filters[key];
-
-    onChange(
-      key,
-      current.includes(option)
-        ? current.filter((value) => value !== option)
-        : [...current, option]
-    );
+  function toggleOptions(key: FilterKey, options: string[]) {
+    onChange(key, options);
   }
 
   // Close dropdown when clicking outside or pressing Escape
@@ -850,9 +817,15 @@ function FiltersDropdown({
     if (!open) return;
 
     function onClickOutside(e: MouseEvent) {
+
+      // Base UI (shadcn base component library) renders things like selects as a
+      // React portal with this data attribute attached.
+      const baseUiPortal = document.querySelector("[data-base-ui-portal]");
+
       if (
         wrapperRef.current &&
-        !wrapperRef.current.contains(e.target as Node)
+        !wrapperRef.current.contains(e.target as Node) &&
+        !baseUiPortal?.contains(e.target as Node)
       ) {
         setOpen(false);
       }
@@ -890,11 +863,8 @@ function FiltersDropdown({
             {activeCount}
           </span>
         )}
-
         <ChevronDown
-          className={`size-4 transition-transform ${
-            open ? "rotate-180" : ""
-          }`}
+          className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
         />
       </Button>
 
@@ -905,9 +875,7 @@ function FiltersDropdown({
           aria-label="Card filters"
           className="absolute right-0 z-40 mt-2 max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl"
         >
-          <h2 className="mb-5 text-xl font-semibold">
-            Filter & Sort
-          </h2>
+          <h2 className="mb-5 text-xl font-semibold">Filter & Sort</h2>
           <div className="space-y-5">
             {groups.map((group) => (
               <fieldset key={group.key}>
@@ -915,35 +883,30 @@ function FiltersDropdown({
                   {group.label}
                 </legend>
                 <div className="flex flex-wrap gap-2">
-                  {group.options.map((option) => {
-                    const isSelected =
-                      filters[group.key].includes(option);
-
-                    return (
-                      <Button
-                        key={option}
-                        type="button"
-                        variant={
-                          isSelected ? "default" : "outline"
-                        }
-                        aria-pressed={isSelected}
-                        onClick={() =>
-                          toggleOption(group.key, option)
-                        }
-                        className="text-sm"
-                      >
-                        {option}
-                      </Button>
-                    );
-                  })}
+                  <Select
+                    multiple
+                    value={filters[group.key]}
+                    onValueChange={(values, details) => {
+                      toggleOptions(group.key, values);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={group.label} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {group.options.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-
               </fieldset>
             ))}
 
             {/* Sort dropdown */}
             <div className="space-y-2">
-
               <label
                 htmlFor="builder-sort-order"
                 className="text-base font-medium"
@@ -951,24 +914,29 @@ function FiltersDropdown({
                 Sort by
               </label>
 
-              <select
+              {/* <select
                 id="builder-sort-order"
                 value={filters.sortOrder}
-                onChange={(e) =>
-                  onChange("sortOrder", e.target.value)
-                }
+                onChange={(e) => onChange("sortOrder", e.target.value)}
                 className="w-full rounded-md border border-border bg-background p-3 text-base"
               >
                 <option value="az">Name: A–Z</option>
                 <option value="za">Name: Z–A</option>
-              </select>
-
+              </select> */}
+              <Select value={filters.sortOrder} onValueChange={(e, v) => onChange("sortOrder", e)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Sort Order" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem key="az" value="az">Name: A-Z</SelectItem>
+                  <SelectItem key="za" value="za">Name: Z-A</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           {/* Clear and Done */}
           <div className="mt-6 flex items-center justify-between gap-3 border-t border-border pt-4">
-
             <Button
               type="button"
               variant="outline"
@@ -986,12 +954,9 @@ function FiltersDropdown({
             >
               Done
             </Button>
-
           </div>
-
         </div>
       )}
-
     </div>
   );
 }
@@ -1059,7 +1024,7 @@ function Pagination({
           >
             {item}
           </Button>
-        )
+        ),
       )}
 
       <Button
@@ -1080,9 +1045,7 @@ function Pagination({
 function DeckProgress({ total }: { total: number }) {
   return (
     <div className="flex items-center gap-3">
-
       <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-muted">
-
         <div
           className="h-full rounded-full bg-linear-to-r from-yellow-300 via-blue-400 to-indigo-500 transition-all"
           style={{
@@ -1170,8 +1133,7 @@ function CardDetailsModal({
 
     window.addEventListener("keydown", onKey);
 
-    return () =>
-      window.removeEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
   const details = [
@@ -1195,7 +1157,6 @@ function CardDetailsModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
     >
-
       <Card
         role="dialog"
         aria-modal="true"
@@ -1203,7 +1164,6 @@ function CardDetailsModal({
         className="max-h-[90vh] w-full max-w-xl overflow-y-auto pt-0 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-
         <div
           className={`flex items-center justify-between px-4 py-3 text-black ${cardColor}`}
         >
@@ -1223,7 +1183,6 @@ function CardDetailsModal({
         </div>
 
         <CardContent className="grid gap-5 sm:grid-cols-[180px_1fr]">
-
           <CardImage
             card={card}
             className="flex h-56 items-center justify-center rounded-lg bg-muted text-base font-semibold text-muted-foreground"
@@ -1231,52 +1190,35 @@ function CardDetailsModal({
 
           <div>
             <dl className="space-y-3 text-base">
-
               {details.map((detail) => (
                 <div
                   key={detail.label}
                   className="flex justify-between gap-4 border-b border-border pb-2"
                 >
-                  <dt className="text-muted-foreground">
-                    {detail.label}
-                  </dt>
+                  <dt className="text-muted-foreground">{detail.label}</dt>
 
-                  <dd className="text-right font-medium">
-                    {detail.value}
-                  </dd>
+                  <dd className="text-right font-medium">{detail.value}</dd>
                 </div>
               ))}
-
             </dl>
 
             <p className="pt-4 text-base text-muted-foreground">
-              Placeholder description. Card text, attacks,
-              and prices will go here.
+              Placeholder description. Card text, attacks, and prices will go
+              here.
             </p>
-
           </div>
-
         </CardContent>
 
         <CardFooter className="justify-end gap-3">
-
-          <Button
-            variant="outline"
-            onClick={onClose}
-          >
+          <Button variant="outline" onClick={onClose}>
             Close
           </Button>
 
-          <Button
-            onClick={onAdd}
-            disabled={disabled}
-          >
+          <Button onClick={onAdd} disabled={disabled}>
             <Plus className="size-5" />
             Add to deck
           </Button>
-
         </CardFooter>
-
       </Card>
     </div>
   );
