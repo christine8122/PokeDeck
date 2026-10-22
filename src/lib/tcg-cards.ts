@@ -1,6 +1,8 @@
 // Shared helpers for reading cards out of the Supabase `cards` table.
 // Used by the builder and collection pages so they decode cards the same way.
 
+import { Database } from "@/lib/supabase/database.types";
+
 // Change this if your table has a different name in Table Editor
 export const CARDS_TABLE = "cards";
 
@@ -8,16 +10,7 @@ export const CARDS_TABLE = "cards";
 export const CARD_COLUMNS = "id, name, set, variants, types, rarity, hp, stage";
 
 // One row exactly as it comes out of Supabase (everything is text)
-export type CardRow = {
-  id: string;
-  name: string;
-  set: string;
-  variants: string | null;
-  types: string | null;
-  rarity: string | null;
-  hp: string | null;
-  stage: string | null;
-};
+export type CardRow = Database["public"]["Tables"]["cards"]["Row"];
 
 // The `types` and `variants` columns are bitmasks: each option gets its own
 // number (1, 2, 4, 8, ...) and a card's value is the sum of its options.
@@ -47,17 +40,17 @@ const VARIANT_BITS = [
 ];
 
 // Turn a bitmask like "64" into a list of names like ["Grass"]
-function decodeBits(code: string | null, names: string[]) {
+function decodeBits(code: number | null, names: string[]) {
   const value = Number(code);
   if (!Number.isInteger(value) || value <= 0) return [];
   return names.filter((_, i) => (value & (1 << i)) !== 0);
 }
 
 // "64" -> ["Grass"], "96" -> ["Fire", "Grass"]
-export const decodeTypes = (code: string | null) => decodeBits(code, TYPE_BITS);
+export const decodeTypes = (code: number | null) => decodeBits(code, TYPE_BITS);
 
 // "1" -> ["Normal"], "3" -> ["Normal", "Reverse Holo"]
-export const decodeVariants = (code: string | null) =>
+export const decodeVariants = (code: number | null) =>
   decodeBits(code, VARIANT_BITS);
 
 // TCGdex uses "None" for promo cards that have no printed rarity
@@ -68,7 +61,7 @@ export const cleanRarity = (rarity: string | null) =>
 export const cardNumberFromId = (id: string) => `#${id.split("-").pop()}`;
 
 // HP is stored as text, so turn it into a real number (or null if missing)
-export function parseHp(hp: string | null) {
+export function parseHp(hp: number | null) {
   const value = Number(hp);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
