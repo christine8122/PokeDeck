@@ -16,9 +16,18 @@ import {
 
 import Container from "@/components/custom/Container";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardTitle,
+} from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
-import { CardImage, getTypeColor, TiltCard } from "@/components/custom/CardArt";
+import {
+  CardImage,
+  getTypeColor,
+  TiltCard,
+} from "@/components/custom/CardArt";
 import {
   CARD_COLUMNS,
   CARDS_TABLE,
@@ -30,6 +39,13 @@ import {
   parseHp,
   type CardRow,
 } from "@/lib/tcg-cards";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { notFound, useRouter } from "next/navigation";
 import { DeckRow } from "@/lib/supabase/types";
 
@@ -944,15 +960,8 @@ function FiltersDropdown({
     (filters.sortOrder !== "az" ? 1 : 0);
 
   // Add the option if it isn't picked yet, remove it if it is
-  function toggleOption(key: FilterKey, option: string) {
-    const current = filters[key];
-
-    onChange(
-      key,
-      current.includes(option)
-        ? current.filter((value) => value !== option)
-        : [...current, option],
-    );
+  function toggleOptions(key: FilterKey, options: string[]) {
+    onChange(key, options);
   }
 
   // Close dropdown when clicking outside or pressing Escape
@@ -960,9 +969,15 @@ function FiltersDropdown({
     if (!open) return;
 
     function onClickOutside(e: MouseEvent) {
+
+      // Base UI (shadcn base component library) renders things like selects as a
+      // React portal with this data attribute attached.
+      const baseUiPortal = document.querySelector("[data-base-ui-portal]");
+
       if (
         wrapperRef.current &&
-        !wrapperRef.current.contains(e.target as Node)
+        !wrapperRef.current.contains(e.target as Node) &&
+        !baseUiPortal?.contains(e.target as Node)
       ) {
         setOpen(false);
       }
@@ -1020,22 +1035,24 @@ function FiltersDropdown({
                   {group.label}
                 </legend>
                 <div className="flex flex-wrap gap-2">
-                  {group.options.map((option) => {
-                    const isSelected = filters[group.key].includes(option);
-
-                    return (
-                      <Button
-                        key={option}
-                        type="button"
-                        variant={isSelected ? "default" : "outline"}
-                        aria-pressed={isSelected}
-                        onClick={() => toggleOption(group.key, option)}
-                        className="text-sm"
-                      >
-                        {option}
-                      </Button>
-                    );
-                  })}
+                  <Select
+                    multiple
+                    value={filters[group.key]}
+                    onValueChange={(values, details) => {
+                      toggleOptions(group.key, values);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={group.label} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {group.options.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </fieldset>
             ))}
@@ -1049,7 +1066,7 @@ function FiltersDropdown({
                 Sort by
               </label>
 
-              <select
+              {/* <select
                 id="builder-sort-order"
                 value={filters.sortOrder}
                 onChange={(e) => onChange("sortOrder", e.target.value)}
@@ -1057,7 +1074,16 @@ function FiltersDropdown({
               >
                 <option value="az">Name: A–Z</option>
                 <option value="za">Name: Z–A</option>
-              </select>
+              </select> */}
+              <Select value={filters.sortOrder} onValueChange={(e, v) => onChange("sortOrder", e)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Sort Order" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem key="az" value="az">Name: A-Z</SelectItem>
+                  <SelectItem key="za" value="za">Name: Z-A</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
