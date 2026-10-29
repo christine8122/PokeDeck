@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -16,9 +16,18 @@ import {
 
 import Container from "@/components/custom/Container";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardTitle,
+} from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
-import { CardImage, getTypeColor, TiltCard } from "@/components/custom/CardArt";
+import {
+  CardImage,
+  getTypeColor,
+  TiltCard,
+} from "@/components/custom/CardArt";
 import {
   CARD_COLUMNS,
   CARDS_TABLE,
@@ -37,6 +46,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { notFound, useRouter } from "next/navigation";
+import { DeckRow } from "@/lib/supabase/types";
 
 // ---- Supabase settings ----
 
@@ -78,6 +89,32 @@ function rowToCard(row: CardRow): TcgCard {
     price: "—", // No price data in the table yet
     owned: false, // TODO: hook up to the user's collection
   };
+}
+
+function deckRowToCardList(cards: TcgCard[], row: DeckRow): DeckEntry[] {
+  return row.cards
+    .flatMap((c) => {
+      const resolved = cards!.findLast((tc) => tc.id === c);
+      if (resolved === undefined) {
+        return [];
+      }
+
+      return resolved;
+    })
+    .reduce<DeckEntry[]>((acc, curr) => {
+      // if we find our current card in the accumulated deck, increase qty, otherwise push to array
+      let currentCardEntry = acc.find((e) => e.card.id === curr.id);
+      if (currentCardEntry !== undefined) {
+        currentCardEntry.qty += 1;
+      } else {
+        acc.push({
+          card: curr,
+          qty: 1,
+        });
+      }
+
+      return acc;
+    }, []);
 }
 
 // Trainer and Energy cards have no Pokémon type
@@ -149,10 +186,9 @@ type DeckEntry = {
   qty: number;
 };
 
-// A deck you saved. Saved decks live in page state, so they reset on refresh.
-// TODO: store them in a Supabase table for the logged-in user.
+// A deck you saved.
 type SavedDeck = {
-  id: string;
+  id: number;
   name: string;
   entries: DeckEntry[];
 };
@@ -164,7 +200,15 @@ const countCards = (entries: DeckEntry[]) =>
 
 // ---- Builder Page ----
 
-export default function BuilderPage() {
+export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
+  const router = useRouter();
+  // the param can either be an array of the slug (/foo/bar/) or undefined if we are at /
+  // since we are just querying the id, we only need to get the first value, and throw away the rest
+  // if for whatever reason the url is deformed enough to not have an id, not a loss, just assume we are on a new deck
+  const { id } = use(props.params);
+  const deckId = id?.at(0);
+  const parsedDeckId = deckId ? parseInt(deckId) || null : null;
+
   const [cards, setCards] = useState<TcgCard[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -178,7 +222,9 @@ export default function BuilderPage() {
 
   // Every deck you've saved, and which one is open (null = a new, unsaved deck)
   const [savedDecks, setSavedDecks] = useState<SavedDeck[]>([]);
-  const [currentDeckId, setCurrentDeckId] = useState<string | null>(null);
+  const [currentDeckId, setCurrentDeckId] = useState<number | null>(
+    parsedDeckId,
+  );
   const [isDirty, setIsDirty] = useState(false); // changed since the last save
   const [justSaved, setJustSaved] = useState(false);
 
@@ -223,6 +269,83 @@ export default function BuilderPage() {
       cancelled = true;
     };
   }, []);
+
+  // Fetch the deck information *after* the cards are fetched. Technically, we could do this before, but that
+  // would require rewriting the logic for loading everything, which i do not want to do.
+  useEffect(() => {
+    if (cards) {
+      const supabase = createClient();
+      let cancelled = false;
+
+      async function fetchDeckInfo() {
+        if (currentDeckId !== null) {
+          const { data, error } = await supabase
+            .from("user_decks")
+            .select("*")
+            .eq("id", currentDeckId)
+            .limit(1)
+            .maybeSingle();
+
+          if (cancelled) return;
+
+          if (error) {
+            setLoadError(error.message);
+            return;
+          }
+
+          if (data === null) {
+            console.log("no data?");
+            notFound();
+            return;
+          }
+
+          const deckCards = deckRowToCardList(cards!, data);
+
+          setDeck(deckCards);
+          setDeckName(data.name!);
+        }
+      }
+
+      async function fetchUserDecks() {
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
+        if (sessionError) {
+          console.log(sessionError.message);
+          return;
+        } else if (sessionData["session"] === null) {
+          return;
+        }
+        const userId = sessionData["session"].user.id;
+
+        const { data, error } = await supabase
+          .from("user_decks")
+          .select("*")
+          .eq("owner_id", userId);
+
+        if (error) {
+          console.log(error.message);
+          return;
+        } else if (data === null) {
+          return;
+        }
+
+        const userDecks: SavedDeck[] = data.map((d) => ({
+          id: d.id,
+          name: d.name!,
+          entries: deckRowToCardList(cards!, d),
+        }));
+
+        setSavedDecks(userDecks);
+      }
+
+      fetchDeckInfo();
+      fetchUserDecks();
+
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [cards]);
 
   const allCards = useMemo(() => cards ?? [], [cards]);
 
@@ -401,20 +524,45 @@ export default function BuilderPage() {
   // ---- Saving and switching decks ----
 
   // Save the open deck: update it if it was saved before, otherwise add it to My decks
-  function saveDeck() {
+  async function saveDeck() {
+    const supabase = createClient();
     const name = deckName.trim() || "Untitled Deck";
     const entries = deck.map((entry) => ({ ...entry }));
+    const cards: string[] = entries.flatMap<string>((en) =>
+      Array(en.qty).fill(en.card.id),
+    );
 
     if (currentDeckId) {
+      const { data, error } = await supabase
+        .from("user_decks")
+        .update({ cards: cards, name: name })
+        .eq("id", currentDeckId);
+
+      if (error) {
+        console.log(error.message);
+      }
       setSavedDecks((prev) =>
         prev.map((saved) =>
           saved.id === currentDeckId ? { ...saved, name, entries } : saved,
         ),
       );
     } else {
-      const id = crypto.randomUUID();
-      setSavedDecks((prev) => [...prev, { id, name, entries }]);
-      setCurrentDeckId(id);
+      const { data, error } = await supabase
+        .from("user_decks")
+        .insert({
+          name: name,
+          cards: cards,
+          public: false,
+        })
+        .select()
+        .single();
+      if (error) {
+        console.log(error.message);
+      }
+
+      if (data !== null) {
+        router.push(`/builder/${data.id}`);
+      }
     }
 
     setDeckName(name);
@@ -440,12 +588,8 @@ export default function BuilderPage() {
     setJustSaved(false);
   }
 
-  function clearToNewDeck() {
-    setCurrentDeckId(null);
-    setDeckName(NEW_DECK_NAME);
-    setDeck([]);
-    setIsDirty(false);
-    setJustSaved(false);
+  async function clearToNewDeck() {
+    await router.push("/builder");
   }
 
   function startNewDeck() {
@@ -453,17 +597,25 @@ export default function BuilderPage() {
     clearToNewDeck();
   }
 
-  function deleteDeck() {
+  async function deleteDeck() {
+    const supabase = createClient();
     if (!currentDeckId) return;
     if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) return;
 
-    setSavedDecks((prev) => prev.filter((saved) => saved.id !== currentDeckId));
-    clearToNewDeck();
+    const { data, error } = await supabase
+      .from("user_decks")
+      .delete()
+      .eq("id", currentDeckId);
+    if (error) {
+      console.log(error.message);
+    }
+
+    router.push("/builder");
   }
 
   // Little status line under the Save button
   const saveStatus = justSaved
-    ? "Saved! Decks stay until you refresh the page."
+    ? "Saved!"
     : currentDeckId && isDirty
       ? "Unsaved changes"
       : !currentDeckId && deck.length > 0
@@ -569,7 +721,7 @@ export default function BuilderPage() {
           <Card className="mt-6 shadow-md">
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-bold">My decks</h2>
+                <h2 className="text-xl font-bold">My Decks</h2>
                 <Button variant="outline" size="sm" onClick={startNewDeck}>
                   <Plus className="size-4" />
                   New deck
