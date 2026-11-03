@@ -191,6 +191,7 @@ type SavedDeck = {
   id: number;
   name: string;
   entries: DeckEntry[];
+  public: boolean;
 };
 
 const NEW_DECK_NAME = "New Deck";
@@ -216,6 +217,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
   // The deck you're editing right now
   const [deckName, setDeckName] = useState(NEW_DECK_NAME);
+  const [isPublic, setIsPublic] = useState(false);
   const [deck, setDeck] = useState<DeckEntry[]>([]);
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
@@ -303,6 +305,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
           setDeck(deckCards);
           setDeckName(data.name!);
+          setIsPublic(data.public ?? false);
         }
       }
 
@@ -333,6 +336,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
           id: d.id,
           name: d.name!,
           entries: deckRowToCardList(cards!, d),
+          public: d.public ?? false,
         }));
 
         setSavedDecks(userDecks);
@@ -535,15 +539,17 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     if (currentDeckId) {
       const { data, error } = await supabase
         .from("user_decks")
-        .update({ cards: cards, name: name })
+        .update({ cards: cards, name: name, public: isPublic, })
         .eq("id", currentDeckId);
 
       if (error) {
         console.log(error.message);
+        window.alert("Couldn't save the deck. Please try again");
+        return;
       }
       setSavedDecks((prev) =>
         prev.map((saved) =>
-          saved.id === currentDeckId ? { ...saved, name, entries } : saved,
+          saved.id === currentDeckId ? { ...saved, name, entries, public: isPublic } : saved,
         ),
       );
     } else {
@@ -552,7 +558,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
         .insert({
           name: name,
           cards: cards,
-          public: false,
+          public: isPublic,
         })
         .select()
         .single();
@@ -583,6 +589,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
     setCurrentDeckId(saved.id);
     setDeckName(saved.name);
+    setIsPublic(saved.public);
     setDeck(saved.entries.map((entry) => ({ ...entry })));
     setIsDirty(false);
     setJustSaved(false);
@@ -638,6 +645,39 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
                 aria-label="Deck name"
                 className="w-full rounded-md bg-transparent text-2xl font-extrabold outline-none focus:ring-2 focus:ring-pink-300"
               />
+
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+  <span id="deck-visibility-label" className="text-base font-semibold">
+    Public deck
+  </span>
+
+  <button
+    type="button"
+    role="switch"
+    aria-checked={isPublic}
+    aria-labelledby="deck-visibility-label"
+    onClick={() => {
+      setIsPublic(!isPublic);
+      markChanged();
+    }}
+    className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
+      isPublic ? "bg-green-600" : "bg-gray-400"
+    }`}
+  >
+    <span
+      className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
+        isPublic ? "translate-x-6" : "translate-x-0"
+      }`}
+    />
+  </button>
+</div>
+
+<p className="text-sm text-muted-foreground">
+  {isPublic
+    ? "Public — other users can view this deck."
+    : "Private — only you can view this deck."}
+  {" "}Click Save to keep changes.
+</p>
 
               <DeckProgress total={totalCards} />
 

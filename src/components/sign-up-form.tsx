@@ -63,100 +63,100 @@ export function SignUpForm({
   };
 
   return (
-    <div className={cn("w-full max-w-lg", className)} {...props}>
-      <Card className="min-h-[520px] w-full py-10">
-        <CardHeader className="text-center">
-          <CardTitle className="text-4xl font-semibold">
-            Create Account
-          </CardTitle>
+  <div className={cn("w-full max-w-2xl", className)} {...props}>
+    <Card className="min-h-[620px] w-full py-10 sm:py-12">
+      <CardHeader className="px-6 text-center sm:px-10">
+        <CardTitle className="text-4xl font-semibold sm:text-5xl">
+          Create Account
+        </CardTitle>
 
-          <CardDescription className="text-base">
-            Create a new account
-          </CardDescription>
-        </CardHeader>
+        <CardDescription className="text-lg">
+          Create a new account
+        </CardDescription>
+      </CardHeader>
 
-        <CardContent>
-          <form onSubmit={handleSignUp} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-base">
-                Email
-              </Label>
+      <CardContent className="px-6 sm:px-10">
+        <form onSubmit={handleSignUp} className="space-y-7">
+          <div className="space-y-3">
+            <Label htmlFor="email" className="text-lg">
+              Email
+            </Label>
 
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                className="h-12 px-4 text-base"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              className="h-14 px-4 text-lg md:text-lg"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-base">
-                Password
-              </Label>
+          <div className="space-y-3">
+            <Label htmlFor="password" className="text-lg">
+              Password
+            </Label>
 
-              <Input
-                id="password"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Enter your password"
-                className="h-12 px-4 text-base"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Enter your password"
+              className="h-14 px-4 text-lg md:text-lg"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="repeat-password" className="text-base">
-                Confirm Password
-              </Label>
+          <div className="space-y-3">
+            <Label htmlFor="repeat-password" className="text-lg">
+              Confirm Password
+            </Label>
 
-              <Input
-                id="repeat-password"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Re-enter your password"
-                className="h-12 px-4 text-base"
-                required
-                value={repeatPassword}
-                onChange={(e) => setRepeatPassword(e.target.value)}
-              />
-            </div>
+            <Input
+              id="repeat-password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Re-enter your password"
+              className="h-14 px-4 text-lg md:text-lg"
+              required
+              value={repeatPassword}
+              onChange={(e) => setRepeatPassword(e.target.value)}
+            />
+          </div>
 
-            {error && (
-              <p role="alert" className="text-sm text-red-700">
-                {error}
-              </p>
-            )}
+          {error && (
+            <p role="alert" className="text-base text-red-700">
+              {error}
+            </p>
+          )}
 
-            <Button
-              type="submit"
-              size="lg"
-              disabled={isLoading}
-              className="h-12 w-full bg-yellow-400 text-base font-semibold text-black hover:bg-yellow-500"
-            >
-              {isLoading ? "Creating an account..." : "Create Account"}
-            </Button>
-          </form>
-        </CardContent>
+          <Button
+            type="submit"
+            size="lg"
+            disabled={isLoading}
+            className="h-14 w-full bg-yellow-400 text-lg font-semibold text-black hover:bg-yellow-500"
+          >
+            {isLoading ? "Creating an account..." : "Create Account"}
+          </Button>
+        </form>
+      </CardContent>
 
-        <CardFooter className="justify-center border-t-0 bg-transparent">
-          <p className="text-base text-muted-foreground">
-            Already have an account?{" "}
-            <Link
-              href="/auth/login"
-              className="font-medium text-red-700 hover:underline"
-            >
-              Log in
-            </Link>
-          </p>
-        </CardFooter>
-      </Card>
-    </div>
-  );
+      <CardFooter className="justify-center border-t-0 bg-transparent px-6 sm:px-10">
+        <p className="text-center text-lg text-muted-foreground">
+          Already have an account?{" "}
+          <Link
+            href="/auth/login"
+            className="font-medium text-red-700 hover:underline"
+          >
+            Log in
+          </Link>
+        </p>
+      </CardFooter>
+    </Card>
+  </div>
+);
 }
