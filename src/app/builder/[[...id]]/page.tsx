@@ -229,6 +229,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   );
   const [isDirty, setIsDirty] = useState(false); // changed since the last save
   const [justSaved, setJustSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // tracks whether a deck is being saved
 
   const [loadedSoFar, setLoadedSoFar] = useState(0);
 
@@ -528,29 +529,38 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   // ---- Saving and switching decks ----
 
   // Save the open deck: update it if it was saved before, otherwise add it to My decks
-  async function saveDeck() {
+async function saveDeck() {
+  if (isSaving) return;
+
+  setIsSaving(true);
+
+  try {
     const supabase = createClient();
     const name = deckName.trim() || "Untitled Deck";
     const entries = deck.map((entry) => ({ ...entry }));
+
     const cards: string[] = entries.flatMap<string>((en) =>
-      Array(en.qty).fill(en.card.id),
+      Array(en.qty).fill(en.card.id)
     );
 
-    if (currentDeckId) {
-      const { data, error } = await supabase
+    if (currentDeckId !== null) {
+      const { error } = await supabase
         .from("user_decks")
-        .update({ cards: cards, name: name, public: isPublic, })
+        .update({
+          cards: cards,
+          name: name,
+          public: isPublic,
+        })
         .eq("id", currentDeckId);
 
-      if (error) {
-        console.log(error.message);
-        window.alert("Couldn't save the deck. Please try again");
-        return;
-      }
+      if (error) throw error;
+
       setSavedDecks((prev) =>
         prev.map((saved) =>
-          saved.id === currentDeckId ? { ...saved, name, entries, public: isPublic } : saved,
-        ),
+          saved.id === currentDeckId
+            ? { ...saved, name, entries, public: isPublic }
+            : saved
+        )
       );
     } else {
       const { data, error } = await supabase
@@ -562,29 +572,33 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
         })
         .select()
         .single();
-      if (error) {
-        console.log(error.message);
-      }
 
-      if (data !== null) {
-        setSavedDecks((prev) => [
-          ...prev,
-          {
-            id: data.id,
-            name: name,
-            entries: entries,
-            public: isPublic,
-          },
-        ]);
-        setCurrentDeckId(data.id);
-        router.push(`/builder/${data.id}`);
-      }
+      if (error) throw error;
+
+      setSavedDecks((prev) => [
+        ...prev,
+        {
+          id: data.id,
+          name: name,
+          entries: entries,
+          public: isPublic,
+        },
+      ]);
+
+      setCurrentDeckId(data.id);
+      router.push(`/builder/${data.id}`);
     }
 
     setDeckName(name);
     setIsDirty(false);
     setJustSaved(true);
+  } catch (error) {
+    console.error("Error saving deck:", error);
+    window.alert("Couldn't save the deck. Please try again.");
+  } finally {
+    setIsSaving(false);
   }
+}
 
   // Ask before throwing away unsaved changes. Returns true if it's okay to continue.
   function okToLeaveDeck() {
@@ -766,16 +780,27 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
               {/* Save (and delete, once it's been saved) */}
               <div className="flex gap-2">
-                <Button
-                  className="flex-1 py-6 text-base"
-                  onClick={saveDeck}
-                  disabled={
-                    deck.length === 0 || (currentDeckId !== null && !isDirty)
-                  }
-                >
-                  <Save className="size-5" />
-                  {currentDeckId ? "Save changes" : "Save deck"}
-                </Button>
+              <Button
+                className="flex-1 py-6 text-base"
+                onClick={saveDeck}
+                disabled={
+                isSaving ||
+                deck.length === 0 ||
+                (currentDeckId !== null && !isDirty)
+              } 
+              >
+              {isSaving ? (
+                <>
+                <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Saving...
+                </>
+                ) : (
+                <>
+                <Save className="size-5" />
+                {currentDeckId ? "Save changes" : "Save deck"}
+                 </>
+               )}
+             </Button>
 
                 {currentDeckId && (
                   <Button
