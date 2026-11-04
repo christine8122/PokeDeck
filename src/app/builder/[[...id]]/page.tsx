@@ -595,13 +595,25 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     setJustSaved(false);
   }
 
+  function resetDeck(){
+    setCurrentDeckId(null);
+    setDeckName(NEW_DECK_NAME);
+    setIsPublic(false);
+    setDeck([]);
+    setSelected(null);
+    setIsDirty(false);
+    setJustSaved(false);
+  }
+
   async function clearToNewDeck() {
     await router.push("/builder");
   }
 
   function startNewDeck() {
     if (!okToLeaveDeck()) return;
-    clearToNewDeck();
+
+    resetDeck();
+    router.push("/builder");
   }
 
   async function deleteDeck() {
