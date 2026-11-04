@@ -567,6 +567,16 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       }
 
       if (data !== null) {
+        setSavedDecks((prev) => [
+          ...prev,
+          {
+            id: data.id,
+            name: name,
+            entries: entries,
+            public: isPublic,
+          },
+        ]);
+        setCurrentDeckId(data.id);
         router.push(`/builder/${data.id}`);
       }
     }
