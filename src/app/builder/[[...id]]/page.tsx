@@ -631,13 +631,31 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     if (!currentDeckId) return;
     if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) return;
 
-    const { data, error } = await supabase
+    const deckIdToDelete = currentDeckId;
+
+    const { error } = await supabase
       .from("user_decks")
       .delete()
-      .eq("id", currentDeckId);
+      .eq("id", deckIdToDelete);
+
     if (error) {
       console.log(error.message);
-    }
+      window.alert("Couldn't delete the deck. Please try again.");
+      return;
+  }
+
+  // Remove the deleted deck from My Decks
+    setSavedDecks((prev) =>
+      prev.filter((saved) => saved.id !== deckIdToDelete));
+
+    // Reset the editor
+    setCurrentDeckId(null);
+    setDeckName(NEW_DECK_NAME);
+    setIsPublic(false);
+    setDeck([]);
+    setSelected(null);
+    setIsDirty(false);
+    setJustSaved(false);
 
     router.push("/builder");
   }
