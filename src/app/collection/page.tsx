@@ -156,22 +156,23 @@ export default function CollectionPage() {
     <Container>
       <div className="space-y-8 py-6">
         <header>
-          <h1 className="text-6xl font-bold">My Collection</h1>
-          <p className="mt-2 text-2xl text-muted-foreground">Browse your Pokemon cards.</p>
+          <h1 className="text-4xl font-bold sm:text-6xl">My Collection</h1>
+          <p className="mt-2 text-lg text-muted-foreground sm:text-2xl">Browse your Pokemon cards.</p>
         </header>
 
         <section>
-          {/* Search and filters stay in the same row; filters float above cards. */}
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
+          {/* Phones: search on top, Add cards and Filters side by side under it.
+              Bigger screens: Add cards, search, and filters all in one row. */}
+          <div className="mb-6 flex flex-wrap gap-3 sm:flex-nowrap sm:items-center sm:gap-4">
             <Button
               type="button"
-              className="h-12 gap-2 px-5 text-base"
+              className="h-12 flex-1 gap-2 px-5 text-base sm:flex-none"
               onClick={() => setShowAddCards(true)}
             >
               <Plus className="size-5" /> Add cards
             </Button>
 
-            <div className="relative min-w-0 flex-1">
+            <div className="relative order-first w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
               <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
@@ -193,13 +194,13 @@ export default function CollectionPage() {
               )}
             </div>
 
-            <div ref={filtersRef} className="relative shrink-0">
+            <div ref={filtersRef} className="relative flex-1 sm:flex-none sm:shrink-0">
               <Button
                 type="button"
                 variant="outline"
                 aria-expanded={showFilters}
                 aria-controls="collection-filters"
-                className="h-12 gap-2 px-5 text-base"
+                className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
                 onClick={() => setShowFilters((previous) => !previous)}
               >
                 <SlidersHorizontal className="size-5" /> Filters
@@ -207,11 +208,20 @@ export default function CollectionPage() {
                 <ChevronDown className={`size-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
               </Button>
 
+              {/* Phones: dark backdrop behind the filter sheet. Tapping it closes the sheet. */}
+              {showFilters && (
+                <div
+                  className="fixed inset-0 z-40 bg-black/50 sm:hidden"
+                  onClick={() => setShowFilters(false)}
+                />
+              )}
+
+              {/* Phones: slides up from the bottom. Bigger screens: floating panel under the button */}
               {showFilters && (
                 <aside
                   id="collection-filters"
                   aria-label="Collection filters"
-                  className="absolute right-0 top-full z-40 mt-2 max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-xl"
+                  className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl border border-border bg-card p-5 shadow-xl sm:absolute sm:bottom-auto sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-[75vh] sm:w-96 sm:max-w-[calc(100vw-2rem)] sm:rounded-xl"
                 >
                   <h2 className="mb-4 text-xl font-semibold">Filter & Sort</h2>
                   <div className="mb-5">
@@ -268,10 +278,10 @@ export default function CollectionPage() {
             </div>
           </div>
 
-          <p className="mb-5 text-xl text-muted-foreground">Showing {visibleCards.length} of {collection.length} cards</p>
+          <p className="mb-5 text-base text-muted-foreground sm:text-xl">Showing {visibleCards.length} of {collection.length} cards</p>
 
-          {/* No sidebar on this page, so 4 across on big screens keeps the cards from getting huge */}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {/* 2 across on phones, up to 4 on big screens so the cards don't get huge */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
             {visibleCards.map((card) => (
               <PokemonCard
                 key={card.id}
@@ -475,15 +485,17 @@ function AddCardsModal({
   }, [trimmed, tooShort]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8" onClick={onClose}>
+    // Phones: fills the whole screen. Bigger screens: centered window with a backdrop.
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 sm:p-8" onClick={onClose}>
       <Card
         role="dialog"
         aria-modal="true"
         aria-label="Add cards to your collection"
-        className="w-full max-w-5xl shadow-xl"
+        className="min-h-full w-full max-w-5xl rounded-none shadow-xl sm:min-h-0 sm:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5">
+        {/* Title stays pinned at the top while you scroll the results */}
+        <div className="sticky top-0 z-10 flex items-center justify-between bg-card px-5 py-3">
           <CardTitle className="text-2xl font-bold">Add cards</CardTitle>
           <Button type="button" variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}><X /></Button>
         </div>
@@ -522,7 +534,7 @@ function AddCardsModal({
           </p>
 
           {!tooShort && status === "done" && results.length > 0 && (
-            <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
               {results.map((card) => (
                 <PokemonCard
                   key={card.id}
