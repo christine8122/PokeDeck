@@ -22,12 +22,9 @@ import {
   CardFooter,
   CardTitle,
 } from "@/components/ui/card";
+import PokemonCard from "@/components/ui/PokemonCard";
 import { createClient } from "@/lib/supabase/client";
-import {
-  CardImage,
-  getTypeColor,
-  TiltCard,
-} from "@/components/custom/CardArt";
+import { CardImage, getTypeColor } from "@/components/custom/CardArt";
 import {
   CARD_COLUMNS,
   CARDS_TABLE,
@@ -203,9 +200,7 @@ const countCards = (entries: DeckEntry[]) =>
 
 export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const router = useRouter();
-  // the param can either be an array of the slug (/foo/bar/) or undefined if we are at /
-  // since we are just querying the id, we only need to get the first value, and throw away the rest
-  // if for whatever reason the url is deformed enough to not have an id, not a loss, just assume we are on a new deck
+
   const { id } = use(props.params);
   const deckId = id?.at(0);
   const parsedDeckId = deckId ? parseInt(deckId) || null : null;
@@ -222,7 +217,6 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
 
-  // Every deck you've saved, and which one is open (null = a new, unsaved deck)
   const [savedDecks, setSavedDecks] = useState<SavedDeck[]>([]);
   const [currentDeckId, setCurrentDeckId] = useState<number | null>(
     parsedDeckId,
@@ -701,37 +695,37 @@ async function saveDeck() {
               />
 
               <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
-  <span id="deck-visibility-label" className="text-base font-semibold">
-    Public deck
-  </span>
+                <span id="deck-visibility-label" className="text-base font-semibold">
+                  Public deck
+                </span>
 
-  <button
-    type="button"
-    role="switch"
-    aria-checked={isPublic}
-    aria-labelledby="deck-visibility-label"
-    onClick={() => {
-      setIsPublic(!isPublic);
-      markChanged();
-    }}
-    className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
-      isPublic ? "bg-green-600" : "bg-gray-400"
-    }`}
-  >
-    <span
-      className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
-        isPublic ? "translate-x-6" : "translate-x-0"
-      }`}
-    />
-  </button>
-</div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isPublic}
+                  aria-labelledby="deck-visibility-label"
+                  onClick={() => {
+                    setIsPublic(!isPublic);
+                    markChanged();
+                  }}
+                  className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
+                    isPublic ? "bg-green-600" : "bg-gray-400"
+                  }`}
+                >
+                  <span
+                    className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
+                      isPublic ? "translate-x-6" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
 
-<p className="text-sm text-muted-foreground">
-  {isPublic
-    ? "Public — other users can view this deck."
-    : "Private — only you can view this deck."}
-  {" "}Click Save to keep changes.
-</p>
+              <p className="text-sm text-muted-foreground">
+                {isPublic
+                  ? "Public — other users can view this deck."
+                  : "Private — only you can view this deck."}
+                {" "}Click Save to keep changes.
+              </p>
 
               <DeckProgress total={totalCards} />
 
@@ -995,13 +989,15 @@ async function saveDeck() {
             <>
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
                 {shownCards.map((card) => (
-                  <BuilderCard
+                  <PokemonCard
                     key={card.id}
                     card={card}
-                    qty={qtyInDeck(card.id)}
+                    // How many copies are in the deck
+                    copies={qtyInDeck(card.id)}
                     onOpen={() => setSelected(card)}
                     onAdd={() => addToDeck(card)}
-                    disabled={!canAdd(card.id)}
+                    addLabel={`Add ${card.name} to deck`}
+                    addDisabled={!canAdd(card.id)}
                   />
                 ))}
               </div>
@@ -1074,7 +1070,6 @@ function FiltersDropdown({
     if (!open) return;
 
     function onClickOutside(e: MouseEvent) {
-
       // Base UI (shadcn base component library) renders things like selects as a
       // React portal with this data attribute attached.
       const baseUiPortal = document.querySelector("[data-base-ui-portal]");
@@ -1217,6 +1212,7 @@ function FiltersDropdown({
     </div>
   );
 }
+
 // ---- Page numbers under the grid ----
 
 // Which page buttons to show, e.g. [1, "...", 4, 5, 6, "...", 20]
@@ -1327,45 +1323,6 @@ function DeckProgress({ total }: { total: number }) {
   );
 }
 
-// ---- Card shown in the grid ----
-
-function BuilderCard({
-  card,
-  qty,
-  onOpen,
-  onAdd,
-  disabled,
-}: {
-  card: TcgCard;
-  qty: number;
-  onOpen: () => void;
-  onAdd: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <TiltCard card={card} onOpen={onOpen}>
-      {/* How many copies are in the deck */}
-      {qty > 0 && (
-        <span className="pointer-events-none absolute -right-2 -top-2 rounded-full bg-white px-3 py-1 text-md font-semibold shadow-md ring-1 ring-foreground/10 [transform:translateZ(40px)]">
-          x{qty}
-        </span>
-      )}
-
-      {/* Add to deck */}
-      <Button
-        variant="outline"
-        size="icon"
-        aria-label={`Add ${card.name} to deck`}
-        onClick={onAdd}
-        disabled={disabled}
-        className="absolute bottom-3 right-3 rounded-full bg-white shadow-lg [transform:translateZ(50px)]"
-      >
-        <Plus className="size-5" />
-      </Button>
-    </TiltCard>
-  );
-}
-
 // ---- Card details modal ----
 
 function CardDetailsModal({
@@ -1424,7 +1381,7 @@ function CardDetailsModal({
         <div
           className={`flex items-center justify-between px-4 py-3 text-black ${cardColor}`}
         >
-          <CardTitle className="flex justify-centertext-xl font-extrabold uppercase tracking-wide">
+          <CardTitle className="flex justify-center text-xl font-extrabold uppercase tracking-wide">
             {card.name}
           </CardTitle>
 
