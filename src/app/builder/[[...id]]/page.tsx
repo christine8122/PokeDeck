@@ -150,30 +150,25 @@ async function getCachedCards(): Promise<TcgCard[]> {
 }
 
 function deckRowToCardList(
-  cards: TcgCard[],
+  cardMap: Map<string, TcgCard>,
   row: DeckRow
 ): DeckEntry[] {
-  const cardMap = new Map(
-    cards.map((card) => [card.id, card])
-  );
-
   const entries: DeckEntry[] = [];
 
   for (const cardId of row.cards) {
     const resolved = cardMap.get(cardId);
+  
+  if (!resolved) continue;
 
-    if(!resolved) continue;
+  const existingEntry = entries.find((entry) => entry.card.id === cardId);
 
-    const existingEntry = entries.find(
-      (entry) => entry.card.id === cardId
-    );
-
-    if (existingEntry) {
-      existingEntry.qty +=1;
-    } else {
-      entries.push({card: resolved, qty 1});
-    }
+  if (existingEntry) {
+    existingEntry.qty += 1;
+  } else {
+    entries.push({ card: resolved, qty: 1});
   }
+  
+}
   return entries;
 }
 
@@ -322,6 +317,15 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     };
 
   }, []);
+
+    // keep full list of cards
+    const allCards = useMemo(() => cards ?? [], [cards]);
+    // create one Map so saved decks can look up cards quickly 
+    const cardMap = useMemo(
+      () => new Map(allCards.map((card) => [card.id, card])),
+      [allCards]
+    );
+
   // Fetch the deck information *after* the cards are fetched. Technically, we could do this before, but that
   // would require rewriting the logic for loading everything, which i do not want to do.
   useEffect(() => {
@@ -351,7 +355,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
             return;
           }
 
-          const deckCards = deckRowToCardList(cards!, data);
+          const deckCards = deckRowToCardList(cardMap, data);
 
           setDeck(deckCards);
           setDeckName(data.name!);
@@ -385,7 +389,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
         const userDecks: SavedDeck[] = data.map((d) => ({
           id: d.id,
           name: d.name!,
-          entries: deckRowToCardList(cards!, d),
+          entries: deckRowToCardList(cardMap, d),
           public: d.public ?? false,
         }));
 
@@ -399,10 +403,12 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
         cancelled = true;
       };
     }
-  }, [cards]);
 
-  const allCards = useMemo(() => cards ?? [], [cards]);
 
+
+  }, [cards, cardMap, currentDeckId]);
+
+ 
   // Build the filter chips from the real data
   const filterGroups: FilterGroup[] = useMemo(
     () => [
@@ -646,7 +652,16 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   }
 
   async function clearToNewDeck() {
-    await router.push("/builder");
+    setCurrentDeckId(null);
+    setDeckName(NEW_DECK_NAME);
+    setDeck([]);
+    setIsPublic(false);
+    setIsDirty(false);
+    setJustSaved(false);
+    setSelected(null);
+
+    router.push("/builder");
+
   }
 
   function startNewDeck() {
@@ -654,22 +669,44 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     clearToNewDeck();
   }
 
-  async function deleteDeck() {
-    const supabase = createClient();
-    if (!currentDeckId) return;
-    if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) return;
+async function deleteDeck() {
+  const supabase = createClient();
 
-    const { data, error } = await supabase
-      .from("user_decks")
-      .delete()
-      .eq("id", currentDeckId);
-    if (error) {
-      console.log(error.message);
-    }
+  if (!currentDeckId) return;
 
-    router.push("/builder");
+  if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) {
+    return;
   }
 
+  const deckIdToDelete = currentDeckId;
+
+  const { error } = await supabase
+    .from("user_decks")
+    .delete()
+    .eq("id", deckIdToDelete);
+
+  if (error) {
+    console.log(error.message);
+    window.alert("Couldn't delete the deck. Please try again.");
+    return;
+  }
+
+  // Immediately remove the deleted deck from My Decks
+  setSavedDecks((prev) =>
+    prev.filter((saved) => saved.id !== deckIdToDelete)
+  );
+
+  // Reset the Builder to a new empty deck
+  setCurrentDeckId(null);
+  setDeckName(NEW_DECK_NAME);
+  setDeck([]);
+  setIsPublic(false);
+  setIsDirty(false);
+  setJustSaved(false);
+  setSelected(null);
+
+  router.push("/builder");
+}
   // Little status line under the Save button
   const saveStatus = justSaved
     ? "Saved!"
