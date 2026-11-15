@@ -5,7 +5,8 @@ import { ChevronDown, Minus, Plus, Search, SlidersHorizontal, Trash2, X } from "
 import Container from "@/components/custom/Container";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
-import { CardImage, TiltCard } from "@/components/custom/CardArt";
+import PokemonCard from "@/components/ui/PokemonCard";
+import { CardImage } from "@/components/custom/CardArt";
 import { createClient } from "@/lib/supabase/client";
 import {
   CARD_COLUMNS,
@@ -17,22 +18,8 @@ import {
   isMcDonaldsSet,
   parseHp,
   type CardRow,
+  type TcgCard,
 } from "@/lib/tcg-cards";
-
-type TcgCard = {
-  id: string;
-  name: string;
-  price: string;
-  set: string;
-  number: string;
-  finish: string;
-  rarity: string;
-  owned: boolean;
-  types: string[];
-  qty: number; // how many copies you own
-  hp?: number | null;
-  stage?: string;
-};
 
 // Starting collection: just the Base Set Pikachu.
 // The id is a real TCGdex card id (set-number) so the card image loads.
@@ -194,10 +181,19 @@ export default function CollectionPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 aria-label="Search your collection"
               />
-              {search && <button type="button" aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"><X className="size-5" /></button>}
-           
-          </div>
-            <div ref={filtersRef} className="relative shrink-0">            
+              {search && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearch("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                >
+                  <X className="size-5" />
+                </button>
+              )}
+            </div>
+
+            <div ref={filtersRef} className="relative shrink-0">
               <Button
                 type="button"
                 variant="outline"
@@ -206,7 +202,7 @@ export default function CollectionPage() {
                 className="h-12 gap-2 px-5 text-base"
                 onClick={() => setShowFilters((previous) => !previous)}
               >
-                <SlidersHorizontal className="size-5" />  Filters
+                <SlidersHorizontal className="size-5" /> Filters
                 {activeCount > 0 && <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">{activeCount}</span>}
                 <ChevronDown className={`size-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
               </Button>
@@ -235,7 +231,6 @@ export default function CollectionPage() {
                       ))}
                     </div>
                   </div>
-                  
 
                   <div className="space-y-4">
                     <div className="space-y-2">
@@ -271,12 +266,23 @@ export default function CollectionPage() {
                 </aside>
               )}
             </div>
-           </div>    
+          </div>
+
           <p className="mb-5 text-xl text-muted-foreground">Showing {visibleCards.length} of {collection.length} cards</p>
+
           {/* No sidebar on this page, so 4 across on big screens keeps the cards from getting huge */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {visibleCards.map((card) => <CollectionCard key={card.id} card={card} onOpen={() => setSelected(card)} />)}
+            {visibleCards.map((card) => (
+              <PokemonCard
+                key={card.id}
+                card={card}
+                // Only show the badge once you own 2 or more
+                copies={card.qty > 1 ? card.qty : 0}
+                onOpen={() => setSelected(card)}
+              />
+            ))}
           </div>
+
           {visibleCards.length === 0 && (
             <div className="py-10 text-center">
               <p className="mb-3 text-lg text-muted-foreground">No cards match your search or filters.</p>
@@ -285,6 +291,7 @@ export default function CollectionPage() {
           )}
         </section>
       </div>
+
       {selected && (
         <CardDetailsModal
           card={selected}
@@ -305,24 +312,6 @@ export default function CollectionPage() {
   );
 }
 
-// Just the card art, tilting toward the mouse. Click it to open the details.
-function CollectionCard({ card, onOpen }: { card: TcgCard; onOpen: () => void }) {
-  return (
-    <TiltCard card={card} onOpen={onOpen}>
-      {card.qty > 1 && <CopiesBadge qty={card.qty} />}
-    </TiltCard>
-  );
-}
-
-// "x2" bubble on the corner of a card
-function CopiesBadge({ qty }: { qty: number }) {
-  return (
-    <span className="pointer-events-none absolute -right-2 -top-2 rounded-full bg-white px-3 py-1 text-md font-semibold shadow-md ring-1 ring-foreground/10 [transform:translateZ(40px)]">
-      x{qty}
-    </span>
-  );
-}
-
 function CardDetailsModal({
   card,
   qty,
@@ -337,6 +326,7 @@ function CardDetailsModal({
   onClose: () => void;
 }) {
   const cardColor = getCardColor(card.types);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -533,31 +523,18 @@ function AddCardsModal({
 
           {!tooShort && status === "done" && results.length > 0 && (
             <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-              {results.map((card) => {
-                const owned = qtyInCollection(card.id);
-                return (
-                  <div key={card.id}>
-                    {/* Clicking the card adds a copy too */}
-                    <TiltCard card={card} onOpen={() => onAdd(card)} label={`Add ${card.name} (${card.set} ${card.number}) to collection`}>
-                      {owned > 0 && <CopiesBadge qty={owned} />}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        aria-label={`Add ${card.name} to collection`}
-                        onClick={() => onAdd(card)}
-                        className="absolute bottom-3 right-3 rounded-full bg-white shadow-lg [transform:translateZ(50px)]"
-                      >
-                        <Plus className="size-5" />
-                      </Button>
-                    </TiltCard>
-                    <p className="mt-2 truncate text-sm text-muted-foreground">
-                      {card.set} · {card.number}
-                      {owned > 0 && <span className="font-semibold text-green-600"> · In collection</span>}
-                    </p>
-                  </div>
-                );
-              })}
+              {results.map((card) => (
+                <PokemonCard
+                  key={card.id}
+                  card={card}
+                  copies={qtyInCollection(card.id)}
+                  // Clicking the card adds a copy too
+                  onOpen={() => onAdd(card)}
+                  onAdd={() => onAdd(card)}
+                  label={`Add ${card.name} (${card.set} ${card.number}) to collection`}
+                  showSetInfo
+                />
+              ))}
             </div>
           )}
         </CardContent>

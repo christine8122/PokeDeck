@@ -22,12 +22,9 @@ import {
   CardFooter,
   CardTitle,
 } from "@/components/ui/card";
+import PokemonCard from "@/components/ui/PokemonCard";
 import { createClient } from "@/lib/supabase/client";
-import {
-  CardImage,
-  getTypeColor,
-  TiltCard,
-} from "@/components/custom/CardArt";
+import { CardImage, getTypeColor } from "@/components/custom/CardArt";
 import {
   CARD_COLUMNS,
   CARDS_TABLE,
@@ -48,7 +45,7 @@ import {
 } from "@/components/ui/select";
 import { notFound, useRouter } from "next/navigation";
 import { DeckRow } from "@/lib/supabase/types";
-import { nextImageLoaderRegex } from "next/dist/build/webpack-config";
+
 
 // ---- Supabase settings ----
 
@@ -259,9 +256,7 @@ const countCards = (entries: DeckEntry[]) =>
 
 export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const router = useRouter();
-  // the param can either be an array of the slug (/foo/bar/) or undefined if we are at /
-  // since we are just querying the id, we only need to get the first value, and throw away the rest
-  // if for whatever reason the url is deformed enough to not have an id, not a loss, just assume we are on a new deck
+
   const { id } = use(props.params);
   const deckId = id?.at(0);
   const parsedDeckId = deckId ? parseInt(deckId) || null : null;
@@ -280,13 +275,13 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
 
-  // Every deck you've saved, and which one is open (null = a new, unsaved deck)
   const [savedDecks, setSavedDecks] = useState<SavedDeck[]>([]);
   const [currentDeckId, setCurrentDeckId] = useState<number | null>(
     parsedDeckId,
   );
   const [isDirty, setIsDirty] = useState(false); // changed since the last save
   const [justSaved, setJustSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // tracks whether a deck is being saved
 
   const [loadedSoFar, setLoadedSoFar] = useState(0);
 
@@ -564,7 +559,9 @@ useEffect(() => {
       if (!matchesAny(filters.set, [card.set])) return false;
       if (!matchesAny(filters.finish, card.finishes)) return false;
 
-      if (filters.ownedOnly && !card.owned) return false;
+      if (filters.ownedOnly && (ownedCards.get(card.id) ?? 0) <= 0) {
+        return false;
+      }
 
       return true;
     });
@@ -604,7 +601,7 @@ useEffect(() => {
         a.number.localeCompare(b.number, undefined, { numeric: true })
       );
     });
-  }, [allCards, filters]);
+  }, [allCards, filters, ownedCards]);
 
   // Only render one page of cards at a time so we don't fetch every image at once
   const totalPages = Math.max(1, Math.ceil(visibleCards.length / PAGE_SIZE));
@@ -664,29 +661,38 @@ useEffect(() => {
   // ---- Saving and switching decks ----
 
   // Save the open deck: update it if it was saved before, otherwise add it to My decks
-  async function saveDeck() {
+async function saveDeck() {
+  if (isSaving) return;
+
+  setIsSaving(true);
+
+  try {
     const supabase = createClient();
     const name = deckName.trim() || "Untitled Deck";
     const entries = deck.map((entry) => ({ ...entry }));
+
     const cards: string[] = entries.flatMap<string>((en) =>
-      Array(en.qty).fill(en.card.id),
+      Array(en.qty).fill(en.card.id)
     );
 
-    if (currentDeckId) {
-      const { data, error } = await supabase
+    if (currentDeckId !== null) {
+      const { error } = await supabase
         .from("user_decks")
-        .update({ cards: cards, name: name, public: isPublic, })
+        .update({
+          cards: cards,
+          name: name,
+          public: isPublic,
+        })
         .eq("id", currentDeckId);
 
-      if (error) {
-        console.log(error.message);
-        window.alert("Couldn't save the deck. Please try again");
-        return;
-      }
+      if (error) throw error;
+
       setSavedDecks((prev) =>
         prev.map((saved) =>
-          saved.id === currentDeckId ? { ...saved, name, entries, public: isPublic } : saved,
-        ),
+          saved.id === currentDeckId
+            ? { ...saved, name, entries, public: isPublic }
+            : saved
+        )
       );
     } else {
       const { data, error } = await supabase
@@ -698,19 +704,33 @@ useEffect(() => {
         })
         .select()
         .single();
-      if (error) {
-        console.log(error.message);
-      }
 
-      if (data !== null) {
-        router.push(`/builder/${data.id}`);
-      }
+      if (error) throw error;
+
+      setSavedDecks((prev) => [
+        ...prev,
+        {
+          id: data.id,
+          name: name,
+          entries: entries,
+          public: isPublic,
+        },
+      ]);
+
+      setCurrentDeckId(data.id);
+      router.push(`/builder/${data.id}`);
     }
 
     setDeckName(name);
     setIsDirty(false);
     setJustSaved(true);
+  } catch (error) {
+    console.error("Error saving deck:", error);
+    window.alert("Couldn't save the deck. Please try again.");
+  } finally {
+    setIsSaving(false);
   }
+}
 
   // Ask before throwing away unsaved changes. Returns true if it's okay to continue.
   function okToLeaveDeck() {
@@ -731,6 +751,16 @@ useEffect(() => {
     setJustSaved(false);
   }
 
+  function resetDeck(){
+    setCurrentDeckId(null);
+    setDeckName(NEW_DECK_NAME);
+    setIsPublic(false);
+    setDeck([]);
+    setSelected(null);
+    setIsDirty(false);
+    setJustSaved(false);
+  }
+
   async function clearToNewDeck() {
     setCurrentDeckId(null);
     setDeckName(NEW_DECK_NAME);
@@ -746,18 +776,20 @@ useEffect(() => {
 
   function startNewDeck() {
     if (!okToLeaveDeck()) return;
-    clearToNewDeck();
+
+    resetDeck();
+    router.push("/builder");
   }
 
-async function deleteDeck() {
-  const supabase = createClient();
 
-  if (!currentDeckId) return;
+async function deleteDeck() {
+  if (currentDeckId === null) return;
 
   if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) {
     return;
   }
 
+  const supabase = createClient();
   const deckIdToDelete = currentDeckId;
 
   const { error } = await supabase
@@ -771,22 +803,23 @@ async function deleteDeck() {
     return;
   }
 
-  // Immediately remove the deleted deck from My Decks
+  // Remove the deleted deck from My Decks
   setSavedDecks((prev) =>
     prev.filter((saved) => saved.id !== deckIdToDelete)
   );
 
-  // Reset the Builder to a new empty deck
+  // Reset the editor
   setCurrentDeckId(null);
   setDeckName(NEW_DECK_NAME);
-  setDeck([]);
   setIsPublic(false);
+  setDeck([]);
+  setSelected(null);
   setIsDirty(false);
   setJustSaved(false);
-  setSelected(null);
 
   router.push("/builder");
 }
+
   // Little status line under the Save button
   const saveStatus = justSaved
     ? "Saved!"
@@ -814,37 +847,37 @@ async function deleteDeck() {
               />
 
               <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
-  <span id="deck-visibility-label" className="text-base font-semibold">
-    Public deck
-  </span>
+                <span id="deck-visibility-label" className="text-base font-semibold">
+                  Public deck
+                </span>
 
-  <button
-    type="button"
-    role="switch"
-    aria-checked={isPublic}
-    aria-labelledby="deck-visibility-label"
-    onClick={() => {
-      setIsPublic(!isPublic);
-      markChanged();
-    }}
-    className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
-      isPublic ? "bg-green-600" : "bg-gray-400"
-    }`}
-  >
-    <span
-      className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
-        isPublic ? "translate-x-6" : "translate-x-0"
-      }`}
-    />
-  </button>
-</div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isPublic}
+                  aria-labelledby="deck-visibility-label"
+                  onClick={() => {
+                    setIsPublic(!isPublic);
+                    markChanged();
+                  }}
+                  className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
+                    isPublic ? "bg-green-600" : "bg-gray-400"
+                  }`}
+                >
+                  <span
+                    className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
+                      isPublic ? "translate-x-6" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
 
-<p className="text-sm text-muted-foreground">
-  {isPublic
-    ? "Public — other users can view this deck."
-    : "Private — only you can view this deck."}
-  {" "}Click Save to keep changes.
-</p>
+              <p className="text-sm text-muted-foreground">
+                {isPublic
+                  ? "Public — other users can view this deck."
+                  : "Private — only you can view this deck."}
+                {" "}Click Save to keep changes.
+              </p>
 
               <DeckProgress total={totalCards} />
 
@@ -893,16 +926,27 @@ async function deleteDeck() {
 
               {/* Save (and delete, once it's been saved) */}
               <div className="flex gap-2">
-                <Button
-                  className="flex-1 py-6 text-base"
-                  onClick={saveDeck}
-                  disabled={
-                    deck.length === 0 || (currentDeckId !== null && !isDirty)
-                  }
-                >
-                  <Save className="size-5" />
-                  {currentDeckId ? "Save changes" : "Save deck"}
-                </Button>
+              <Button
+                className="flex-1 py-6 text-base"
+                onClick={saveDeck}
+                disabled={
+                isSaving ||
+                deck.length === 0 ||
+                (currentDeckId !== null && !isDirty)
+              } 
+              >
+              {isSaving ? (
+                <>
+                <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Saving...
+                </>
+                ) : (
+                <>
+                <Save className="size-5" />
+                {currentDeckId ? "Save changes" : "Save deck"}
+                 </>
+               )}
+             </Button>
 
                 {currentDeckId && (
                   <Button
@@ -1097,13 +1141,15 @@ async function deleteDeck() {
             <>
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
                 {shownCards.map((card) => (
-                  <BuilderCard
+                  <PokemonCard
                     key={card.id}
                     card={card}
-                    qty={qtyInDeck(card.id)}
+                    // How many copies are in the deck
+                    copies={qtyInDeck(card.id)}
                     onOpen={() => setSelected(card)}
                     onAdd={() => addToDeck(card)}
-                    disabled={!canAdd(card.id)}
+                    addLabel={`Add ${card.name} to deck`}
+                    addDisabled={!canAdd(card.id)}
                   />
                 ))}
               </div>
@@ -1125,6 +1171,7 @@ async function deleteDeck() {
         <CardDetailsModal
           card={selected}
           qty={qtyInDeck(selected.id)}
+          ownedQty={ownedCards.get(selected.id) ?? 0}
           onClose={() => setSelected(null)}
           onAdd={() => addToDeck(selected)}
           disabled={!canAdd(selected.id)}
@@ -1176,7 +1223,6 @@ function FiltersDropdown({
     if (!open) return;
 
     function onClickOutside(e: MouseEvent) {
-
       // Base UI (shadcn base component library) renders things like selects as a
       // React portal with this data attribute attached.
       const baseUiPortal = document.querySelector("[data-base-ui-portal]");
@@ -1319,6 +1365,7 @@ function FiltersDropdown({
     </div>
   );
 }
+
 // ---- Page numbers under the grid ----
 
 // Which page buttons to show, e.g. [1, "...", 4, 5, 6, "...", 20]
@@ -1429,56 +1476,20 @@ function DeckProgress({ total }: { total: number }) {
   );
 }
 
-// ---- Card shown in the grid ----
-
-function BuilderCard({
-  card,
-  qty,
-  onOpen,
-  onAdd,
-  disabled,
-}: {
-  card: TcgCard;
-  qty: number;
-  onOpen: () => void;
-  onAdd: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <TiltCard card={card} onOpen={onOpen}>
-      {/* How many copies are in the deck */}
-      {qty > 0 && (
-        <span className="pointer-events-none absolute -right-2 -top-2 rounded-full bg-white px-3 py-1 text-md font-semibold shadow-md ring-1 ring-foreground/10 [transform:translateZ(40px)]">
-          x{qty}
-        </span>
-      )}
-
-      {/* Add to deck */}
-      <Button
-        variant="outline"
-        size="icon"
-        aria-label={`Add ${card.name} to deck`}
-        onClick={onAdd}
-        disabled={disabled}
-        className="absolute bottom-3 right-3 rounded-full bg-white shadow-lg [transform:translateZ(50px)]"
-      >
-        <Plus className="size-5" />
-      </Button>
-    </TiltCard>
-  );
-}
-
 // ---- Card details modal ----
+
 
 function CardDetailsModal({
   card,
   qty,
+  ownedQty,
   onClose,
   onAdd,
   disabled,
 }: {
   card: TcgCard;
   qty: number;
+  ownedQty: number;
   onClose: () => void;
   onAdd: () => void;
   disabled: boolean;
@@ -1504,7 +1515,7 @@ function CardDetailsModal({
     { label: "Number", value: card.number },
     { label: "Finish", value: card.finishes.join(" / ") || "Normal" },
     { label: "Price", value: card.price },
-    { label: "Owned", value: card.owned ? "Yes" : "No" },
+    { label: "Owned", value: ownedQty > 0 ? `Yes (${ownedQty})` : "No" },
     {
       label: "In this deck",
       value: `${qty} / ${COPY_LIMIT}`,
@@ -1526,7 +1537,7 @@ function CardDetailsModal({
         <div
           className={`flex items-center justify-between px-4 py-3 text-black ${cardColor}`}
         >
-          <CardTitle className="flex justify-centertext-xl font-extrabold uppercase tracking-wide">
+          <CardTitle className="flex justify-center text-xl font-extrabold uppercase tracking-wide">
             {card.name}
           </CardTitle>
 
