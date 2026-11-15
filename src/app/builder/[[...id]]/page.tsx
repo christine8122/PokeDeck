@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/select";
 import { notFound, useRouter } from "next/navigation";
 import { DeckRow } from "@/lib/supabase/types";
+import { nextImageLoaderRegex } from "next/dist/build/webpack-config";
 
 // ---- Supabase settings ----
 
@@ -74,6 +75,12 @@ type TcgCard = {
   owned: boolean;
 };
 
+// Cards that have already finised downloading
+let cachedCards: TcgCard[] | null = null;
+
+// A card download that is currently in progress
+let cardsPromise: Promise<TcgCard[]> | null = null;
+
 // Convert a Supabase row into the shape the page uses
 function rowToCard(row: CardRow): TcgCard {
   return {
@@ -91,31 +98,85 @@ function rowToCard(row: CardRow): TcgCard {
   };
 }
 
-function deckRowToCardList(cards: TcgCard[], row: DeckRow): DeckEntry[] {
-  return row.cards
-    .flatMap((c) => {
-      const resolved = cards!.findLast((tc) => tc.id === c);
-      if (resolved === undefined) {
-        return [];
+async function getCachedCards(): Promise<TcgCard[]> {
+  // 1. If the cards are already downloaded, reuse them
+  if (cachedCards !== null){
+    console.log("Using cached cards");
+    return cachedCards;
+  }
+
+  // 2. If no download is running, start over
+  if (cardsPromise === null) {
+    cardsPromise = (async () => {
+      const supabase = createClient();
+      const rows: CardRow[] = [];
+
+      console.log("Fetching cards from Supabase");
+
+      while (true) {
+        const {data,error} = await supabase
+        .from(CARDS_TABLE)
+        .select(CARD_COLUMNS)
+        .order("id")
+        .range(rows.length, rows.length + BATCH_SIZE - 1);
+
+        if (error) {
+          throw new Error(error.message);
+        }
+        rows.push(...((data ?? []) as CardRow[]));
+        
+        if (!data || data.length < BATCH_SIZE){
+          break;
+        }
       }
 
-      return resolved;
-    })
-    .reduce<DeckEntry[]>((acc, curr) => {
-      // if we find our current card in the accumulated deck, increase qty, otherwise push to array
-      let currentCardEntry = acc.find((e) => e.card.id === curr.id);
-      if (currentCardEntry !== undefined) {
-        currentCardEntry.qty += 1;
-      } else {
-        acc.push({
-          card: curr,
-          qty: 1,
-        });
-      }
+      const convertedCards = rows.map(rowToCard);
+      
+      cachedCards =  convertedCards;
 
-      return acc;
-    }, []);
+      console.log(`Cached ${convertedCards.length} cards`);
+
+      return convertedCards;
+
+    })();
+  }
+
+  // 3. wait for the existing download
+  try {
+    return await cardsPromise;
+  } finally {
+    cardsPromise = null;
+  }
 }
+
+function deckRowToCardList(
+  cards: TcgCard[],
+  row: DeckRow
+): DeckEntry[] {
+  const cardMap = new Map(
+    cards.map((card) => [card.id, card])
+  );
+
+  const entries: DeckEntry[] = [];
+
+  for (const cardId of row.cards) {
+    const resolved = cardMap.get(cardId);
+
+    if(!resolved) continue;
+
+    const existingEntry = entries.find(
+      (entry) => entry.card.id === cardId
+    );
+
+    if (existingEntry) {
+      existingEntry.qty +=1;
+    } else {
+      entries.push({card: resolved, qty 1});
+    }
+  }
+  return entries;
+}
+
 
 // Trainer and Energy cards have no Pokémon type
 const NO_TYPE = "No type";
@@ -234,44 +295,33 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
   // Load every card from Supabase, 1000 at a time, when the page opens
   useEffect(() => {
-    const supabase = createClient();
     let cancelled = false;
 
     async function loadAllCards() {
-      const rows: CardRow[] = [];
+      try {
+        setLoadError(null);
 
-      while (true) {
-        const { data, error } = await supabase
-          .from(CARDS_TABLE)
-          .select(CARD_COLUMNS)
-          // Sort by id (unique) so batches never skip or repeat a card
-          .order("id")
-          .range(rows.length, rows.length + BATCH_SIZE - 1);
+        const loadedCards = await getCachedCards();
 
+        // only update react if this effect is still active
         if (cancelled) return;
 
-        if (error) {
-          setLoadError(error.message);
-          return;
-        }
+        setCards(loadedCards);
+        setLoadedSoFar(loadedCards.length);
 
-        rows.push(...((data ?? []) as CardRow[]));
-        setLoadedSoFar(rows.length);
-
-        // A batch smaller than BATCH_SIZE means we reached the end
-        if (!data || data.length < BATCH_SIZE) break;
+      } catch (error) {
+        setLoadError(
+          error instanceof Error ? error.message : "Couldn't load cards"
+        );  
       }
-
-      setCards(rows.map(rowToCard));
     }
-
     loadAllCards();
 
     return () => {
       cancelled = true;
     };
-  }, []);
 
+  }, []);
   // Fetch the deck information *after* the cards are fetched. Technically, we could do this before, but that
   // would require rewriting the logic for loading everything, which i do not want to do.
   useEffect(() => {
