@@ -267,6 +267,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const parsedDeckId = deckId ? parseInt(deckId) || null : null;
 
   const [cards, setCards] = useState<TcgCard[] | null>(null);
+  const [ownedCards, setOwnedCards] = useState<Map<string, number>>(
+  () => new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const gridTopRef = useRef<HTMLDivElement>(null);
@@ -326,87 +328,161 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       [allCards]
     );
 
+    
+
   // Fetch the deck information *after* the cards are fetched. Technically, we could do this before, but that
   // would require rewriting the logic for loading everything, which i do not want to do.
+
+  // Fetch the selected deck when its ID changes
   useEffect(() => {
-    if (cards) {
-      const supabase = createClient();
-      let cancelled = false;
+    if (!cards || currentDeckId === null) return;
 
-      async function fetchDeckInfo() {
-        if (currentDeckId !== null) {
-          const { data, error } = await supabase
-            .from("user_decks")
-            .select("*")
-            .eq("id", currentDeckId)
-            .limit(1)
-            .maybeSingle();
+    const supabase = createClient();
+    let cancelled = false;
 
-          if (cancelled) return;
+    async function fetchDeckInfo() {
+      const { data, error } = await supabase
+        .from("user_decks")
+        .select("*")
+        .eq("id", currentDeckId)
+        .limit(1)
+        .maybeSingle();
 
-          if (error) {
-            setLoadError(error.message);
-            return;
-          }
+      if (cancelled) return;
 
-          if (data === null) {
-            console.log("no data?");
-            notFound();
-            return;
-          }
-
-          const deckCards = deckRowToCardList(cardMap, data);
-
-          setDeck(deckCards);
-          setDeckName(data.name!);
-          setIsPublic(data.public ?? false);
-        }
+      if (error) {
+        setLoadError(error.message);
+        return;
       }
 
-      async function fetchUserDecks() {
-        const { data: sessionData, error: sessionError } =
-          await supabase.auth.getSession();
-        if (sessionError) {
-          console.log(sessionError.message);
-          return;
-        } else if (sessionData["session"] === null) {
-          return;
-        }
-        const userId = sessionData["session"].user.id;
-
-        const { data, error } = await supabase
-          .from("user_decks")
-          .select("*")
-          .eq("owner_id", userId);
-
-        if (error) {
-          console.log(error.message);
-          return;
-        } else if (data === null) {
-          return;
-        }
-
-        const userDecks: SavedDeck[] = data.map((d) => ({
-          id: d.id,
-          name: d.name!,
-          entries: deckRowToCardList(cardMap, d),
-          public: d.public ?? false,
-        }));
-
-        setSavedDecks(userDecks);
+      if (data === null) {
+        notFound();
+        return;
       }
 
-      fetchDeckInfo();
-      fetchUserDecks();
+      const deckCards = deckRowToCardList(cardMap, data);
 
-      return () => {
-        cancelled = true;
-      };
+      setDeck(deckCards);
+      setDeckName(data.name!);
+      setIsPublic(data.public ?? false);
     }
 
+    fetchDeckInfo();
 
-
+    return () => {
+      cancelled = true;
+    };
   }, [cards, cardMap, currentDeckId]);
+
+
+  // Fetch the user's saved decks only when the card catalog loads
+  useEffect(() => {
+    if (!cards) return;
+
+    const supabase = createClient();
+    let cancelled = false;
+
+    async function fetchUserDecks() {
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+
+      if (cancelled) return;
+
+      if (sessionError) {
+        console.log(sessionError.message);
+        return;
+      }
+
+      if (!sessionData.session) return;
+
+      const userId = sessionData.session.user.id;
+
+      const { data, error } = await supabase
+        .from("user_decks")
+        .select("*")
+        .eq("owner_id", userId);
+
+      if (cancelled) return;
+
+      if (error) {
+        console.log(error.message);
+        return;
+      }
+
+      if (!data) return;
+
+      const userDecks: SavedDeck[] = data.map((d) => ({
+        id: d.id,
+        name: d.name!,
+        entries: deckRowToCardList(cardMap, d),
+        public: d.public ?? false,
+      }));
+
+      setSavedDecks(userDecks);
+    }
+
+    fetchUserDecks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cards, cardMap]);
+
+
+useEffect(() => {
+  const supabase = createClient();
+  let cancelled = false;
+
+  async function fetchOwnedCards() {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (cancelled) return;
+
+    if (userError) {
+      console.error("Couldn't get user:", userError.message);
+      return;
+    }
+
+    if (!user) {
+      setOwnedCards(new Map());
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("user_collections")
+      .select("card_id, card_quantity")
+      .eq("user_id", user.id);
+
+    if (cancelled) return;
+
+    if (error) {
+      console.error("Couldn't load collection:", error.message);
+      return;
+    }
+
+    const collectionMap = new Map<string, number>();
+
+  for (const row of data ?? []) {
+  if (row.card_id === null) continue;
+
+  collectionMap.set(
+    row.card_id,
+    Number(row.card_quantity ?? 0)
+  );
+}
+
+    setOwnedCards(collectionMap);
+  }
+
+  fetchOwnedCards();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
  
   // Build the filter chips from the real data
@@ -443,9 +519,11 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
   const totalCards = deck.reduce((sum, entry) => sum + entry.qty, 0);
 
-  const ownedInDeck = deck
-    .filter((entry) => entry.card.owned)
-    .reduce((sum, entry) => sum + entry.qty, 0);
+  const ownedInDeck = deck.reduce((sum, entry) => {
+    const quantityOwned = ownedCards.get(entry.card.id) ?? 0;
+
+      return sum + Math.min(entry.qty, quantityOwned);
+    }, 0);
 
   // Any filter change also sends the grid back to page 1
   function changeFilters(update: (prev: Filters) => Filters) {
