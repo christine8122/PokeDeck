@@ -341,6 +341,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     let cancelled = false;
 
     async function fetchDeckInfo() {
+      if (currentDeckId === null) return; 
+      
       const { data, error } = await supabase
         .from("user_decks")
         .select("*")
