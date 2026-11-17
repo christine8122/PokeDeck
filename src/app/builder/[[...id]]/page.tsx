@@ -1067,23 +1067,9 @@ async function deleteDeck() {
                 changeFilters((prev) => ({
                   ...emptyFilters,
                   search: prev.search,
-                  ownedOnly: prev.ownedOnly,
                 }))
               }
             />
-
-            <button
-              type="button"
-              onClick={() => updateFilter("ownedOnly", !filters.ownedOnly)}
-              aria-pressed={filters.ownedOnly}
-              className={`rounded-xl px-5 py-3 text-base font-medium transition-colors ${
-                filters.ownedOnly
-                  ? "bg-foreground text-background"
-                  : "bg-card text-foreground ring-1 ring-foreground/15 hover:bg-muted"
-              }`}
-            >
-              Owned
-            </button>
           </div>
 
           {/* Result count and clear all */}
@@ -1191,6 +1177,7 @@ type FilterGroup = {
   options: string[];
 };
 
+
 function FiltersDropdown({
   filters,
   groups,
@@ -1199,7 +1186,7 @@ function FiltersDropdown({
 }: {
   filters: Filters;
   groups: FilterGroup[];
-  onChange: <K extends FilterKey | "sortOrder">(
+  onChange: <K extends FilterKey | "sortOrder" | "ownedOnly">(
     key: K,
     value: Filters[K],
   ) => void;
@@ -1208,10 +1195,11 @@ function FiltersDropdown({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Total options picked across all groups, plus 1 if the sort was changed
+  // Total selected filters, including Owned
   const activeCount =
     groups.reduce((sum, group) => sum + filters[group.key].length, 0) +
-    (filters.sortOrder !== "az" ? 1 : 0);
+    (filters.sortOrder !== "az" ? 1 : 0) +
+    (filters.ownedOnly ? 1 : 0);
 
   // Add the option if it isn't picked yet, remove it if it is
   function toggleOptions(key: FilterKey, options: string[]) {
@@ -1223,8 +1211,6 @@ function FiltersDropdown({
     if (!open) return;
 
     function onClickOutside(e: MouseEvent) {
-      // Base UI (shadcn base component library) renders things like selects as a
-      // React portal with this data attribute attached.
       const baseUiPortal = document.querySelector("[data-base-ui-portal]");
 
       if (
@@ -1263,13 +1249,17 @@ function FiltersDropdown({
       >
         <SlidersHorizontal className="size-5" />
         Filters
+
         {activeCount > 0 && (
           <span className="flex size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">
             {activeCount}
           </span>
         )}
+
         <ChevronDown
-          className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`size-4 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
         />
       </Button>
 
@@ -1280,13 +1270,17 @@ function FiltersDropdown({
           aria-label="Card filters"
           className="absolute right-0 z-40 mt-2 max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl"
         >
-          <h2 className="mb-5 text-xl font-semibold">Filter & Sort</h2>
+          <h2 className="mb-5 text-xl font-semibold">
+            Filter & Sort
+          </h2>
+
           <div className="space-y-5">
             {groups.map((group) => (
               <fieldset key={group.key}>
                 <legend className="mb-3 text-base font-medium">
                   {group.label}
                 </legend>
+
                 <div className="flex flex-wrap gap-2">
                   <Select
                     multiple
@@ -1298,6 +1292,7 @@ function FiltersDropdown({
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder={group.label} />
                     </SelectTrigger>
+
                     <SelectContent>
                       {group.options.map((item) => (
                         <SelectItem key={item} value={item}>
@@ -1309,6 +1304,26 @@ function FiltersDropdown({
                 </div>
               </fieldset>
             ))}
+
+            {/* Owned Cards filter */}
+            <div className="flex items-center justify-between gap-3">
+              <label
+                htmlFor="builder-owned-only"
+                className="text-base font-medium"
+              >
+                Owned Cards Only
+              </label>
+
+              <input
+                id="builder-owned-only"
+                type="checkbox"
+                checked={filters.ownedOnly}
+                onChange={(e) =>
+                  onChange("ownedOnly", e.target.checked)
+                }
+                className="h-4 w-4 cursor-pointer accent-primary"
+              />
+            </div>
 
             {/* Sort dropdown */}
             <div className="space-y-2">
@@ -1328,13 +1343,26 @@ function FiltersDropdown({
                 <option value="az">Name: A–Z</option>
                 <option value="za">Name: Z–A</option>
               </select> */}
-              <Select value={filters.sortOrder} onValueChange={(e, v) => onChange("sortOrder", e)}>
+
+              <Select
+                value={filters.sortOrder}
+                onValueChange={(value) => {
+                  if (value !== null) {
+                    onChange("sortOrder", value);
+                  }
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Sort Order" />
                 </SelectTrigger>
+
                 <SelectContent>
-                  <SelectItem key="az" value="az">Name: A-Z</SelectItem>
-                  <SelectItem key="za" value="za">Name: Z-A</SelectItem>
+                  <SelectItem key="az" value="az">
+                    Name: A-Z
+                  </SelectItem>
+                  <SelectItem key="za" value="za">
+                    Name: Z-A
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1365,6 +1393,7 @@ function FiltersDropdown({
     </div>
   );
 }
+
 
 // ---- Page numbers under the grid ----
 

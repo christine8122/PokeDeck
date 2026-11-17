@@ -12,6 +12,22 @@ export const CARD_COLUMNS = "id, name, set, variants, types, rarity, hp, stage";
 // One row exactly as it comes out of Supabase (everything is text)
 export type CardRow = Database["public"]["Tables"]["cards"]["Row"];
 
+export type TcgCard = {
+  id: string;
+  name: string;
+  price: string;
+  set: string;
+  number: string;
+  finish: string;
+  rarity: string;
+  owned: boolean;
+  types: string[];
+  qty: number;
+  hp: number | null;
+  stage?: string;
+};
+
+
 // The `types` and `variants` columns are bitmasks: each option gets its own
 // number (1, 2, 4, 8, ...) and a card's value is the sum of its options.
 // Types are in alphabetical order (Grass is 7th, so Grass = 64).
