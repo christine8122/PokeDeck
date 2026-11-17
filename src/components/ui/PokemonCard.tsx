@@ -27,6 +27,9 @@ type PokemonCardProps = {
   addLabel?: string;
   // Greys out the + button (like when a deck is full)
   addDisabled?: boolean;
+  // Hides the + button on phones (below the lg breakpoint), so tapping the
+  // card to open its details is the only way in
+  hideAddOnMobile?: boolean;
   // Shows the set and number line under the card
   showSetInfo?: boolean;
 };
@@ -39,27 +42,39 @@ export default function PokemonCard({
   onAdd,
   addLabel,
   addDisabled = false,
+  hideAddOnMobile = false,
   showSetInfo = false,
 }: PokemonCardProps) {
+  // "contents" means the wrapper around the + button takes up no space of its
+  // own, so the button still floats on the card and tilts with it.
+  let addWrapperClass = "contents";
+
+  // On phones, hide the + button completely (it comes back at the lg breakpoint)
+  if (hideAddOnMobile) {
+    addWrapperClass = "hidden lg:contents";
+  }
+
   const tile = (
     <TiltCard card={card} onOpen={onOpen} label={label}>
       {copies > 0 && <CopiesBadge qty={copies} />}
       {onAdd && (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          aria-label={addLabel ?? `Add ${card.name}`}
-          disabled={addDisabled}
-          onClick={(e) => {
-            // Stop the click from also reaching the card underneath
-            e.stopPropagation();
-            onAdd();
-          }}
-          className="absolute bottom-3 right-3 rounded-full bg-white shadow-lg [transform:translateZ(50px)]"
-        >
-          <Plus className="size-5" />
-        </Button>
+        <span className={addWrapperClass}>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label={addLabel ?? `Add ${card.name}`}
+            disabled={addDisabled}
+            onClick={(e) => {
+              // Stop the click from also reaching the card underneath
+              e.stopPropagation();
+              onAdd();
+            }}
+            className="absolute bottom-3 right-3 rounded-full bg-white shadow-lg [transform:translateZ(50px)]"
+          >
+            <Plus className="size-5" />
+          </Button>
+        </span>
       )}
     </TiltCard>
   );

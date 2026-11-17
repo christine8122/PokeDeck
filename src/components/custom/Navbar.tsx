@@ -15,6 +15,11 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { LogoutButton } from "../logout-button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 const navLinks = [
   { href: "/", label: "Home", icon: Home },
@@ -62,16 +67,6 @@ export default function Navbar() {
     setMenuOpen(false);
   }, [pathname]);
 
-  // Close the mobile menu on Escape
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen]);
-
   // "/builder/12" should still highlight Builder, but "/" only matches Home exactly
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -104,7 +99,7 @@ export default function Navbar() {
   );
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-border bg-white lg:relative lg:z-auto">      
+    <nav className="sticky top-0 z-50 border-b border-border bg-white lg:relative lg:z-auto">
       <div className="flex h-16 w-full items-center px-4 sm:px-8 lg:h-20">
         {/* PokéDecks Logo */}
         <Link href="/" className="flex items-center gap-3">
@@ -122,28 +117,25 @@ export default function Navbar() {
           {links}
         </div>
 
-        {/* Menu button: only on smaller screens */}
-        <button
-          type="button"
-          onClick={() => setMenuOpen((open) => !open)}
-          aria-expanded={menuOpen}
-          aria-controls="mobile-menu"
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          className="ml-auto flex size-11 items-center justify-center rounded-xl hover:bg-gray-100 lg:hidden"
-        >
-          {menuOpen ? <X className="size-6" /> : <Menu className="size-6" />}
-        </button>
-      </div>
+        {/* Mobile menu: drops down from the button on smaller screens.
+            The Popover handles Escape, tapping outside, and the open/close animation. */}
+        <Popover open={menuOpen} onOpenChange={(open) => setMenuOpen(open)}>
+          <PopoverTrigger
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            className="ml-auto flex size-11 items-center justify-center rounded-xl hover:bg-gray-100 lg:hidden"
+          >
+            {menuOpen ? <X className="size-6" /> : <Menu className="size-6" />}
+          </PopoverTrigger>
 
-      {/* Mobile menu: drops down under the navbar */}
-      {menuOpen && (
-        <div
-          id="mobile-menu"
-          className="absolute inset-x-0 top-full z-50 flex flex-col gap-1 border-b border-border bg-white p-4 shadow-lg lg:hidden"
-        >
-          {links}
-        </div>
-      )}
+          <PopoverContent
+            align="end"
+            sideOffset={8}
+            className="flex w-64 flex-col gap-1 rounded-xl p-2 lg:hidden"
+          >
+            {links}
+          </PopoverContent>
+        </Popover>
+      </div>
     </nav>
   );
 }

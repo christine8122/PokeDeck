@@ -43,6 +43,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { notFound, useRouter } from "next/navigation";
 import { DeckRow } from "@/lib/supabase/types";
 
@@ -191,7 +196,7 @@ type SavedDeck = {
   public: boolean;
 };
 
-const NEW_DECK_NAME = "New Deck";
+const NEW_DECK_NAME = "Type a deck name...";
 
 const countCards = (entries: DeckEntry[]) =>
   entries.reduce((sum, entry) => sum + entry.qty, 0);
@@ -584,13 +589,20 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
         })
         .select()
         .single();
-      if (error) {
-        console.log(error.message);
+      if (error || data === null) {
+        console.log(error?.message);
+        window.alert("Couldn't save the deck. Please try again");
+        return;
       }
 
-      if (data !== null) {
-        router.push(`/builder/${data.id}`);
-      }
+      // The page stays mounted when the URL changes, so update it directly:
+      // this deck now exists, so the next save updates it instead of making a copy
+      setCurrentDeckId(data.id);
+      setSavedDecks((prev) => [
+        ...prev,
+        { id: data.id, name, entries, public: isPublic },
+      ]);
+      router.replace(`/builder/${data.id}`);
     }
 
     setDeckName(name);
@@ -615,10 +627,22 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     setDeck(saved.entries.map((entry) => ({ ...entry })));
     setIsDirty(false);
     setJustSaved(false);
+
+    // Keep the URL in sync so it always matches the deck on screen
+    router.push(`/builder/${saved.id}`);
   }
 
-  async function clearToNewDeck() {
-    await router.push("/builder");
+  // Reset the page to a fresh, empty deck.
+  // Changing the URL alone doesn't do it: Next.js keeps this page mounted, and
+  // going to /builder when you're already on /builder does nothing at all.
+  function clearToNewDeck() {
+    setCurrentDeckId(null);
+    setDeckName(NEW_DECK_NAME);
+    setIsPublic(false);
+    setDeck([]);
+    setIsDirty(false);
+    setJustSaved(false);
+    router.push("/builder");
   }
 
   function startNewDeck() {
@@ -637,9 +661,13 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       .eq("id", currentDeckId);
     if (error) {
       console.log(error.message);
+      window.alert("Couldn't delete the deck. Please try again");
+      return;
     }
 
-    router.push("/builder");
+    // Take it out of My decks and go back to a fresh deck
+    setSavedDecks((prev) => prev.filter((saved) => saved.id !== currentDeckId));
+    clearToNewDeck();
   }
 
   // Little status line under the Save button
@@ -653,7 +681,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
   // The deck editor and saved decks. Shown in the sidebar on desktop and in a
   // slide-up sheet on phones, so it's written once here and used in both spots.
-  const deckPanel = (
+  // Phones pass false because their New deck button lives in the bottom bar.
+  const renderDeckPanel = (showNewDeck: boolean) => (
     <>
       <Card className="shadow-md">
         <CardContent className="space-y-5">
@@ -783,10 +812,12 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-xl font-bold">My Decks</h2>
-            <Button variant="outline" size="sm" onClick={startNewDeck}>
-              <Plus className="size-4" />
-              New deck
-            </Button>
+            {showNewDeck && (
+              <Button variant="outline" size="sm" onClick={startNewDeck}>
+                <Plus className="size-4" />
+                New deck
+              </Button>
+            )}
           </div>
 
           {savedDecks.length === 0 ? (
@@ -847,7 +878,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       <div className="grid gap-8 pb-24 lg:grid-cols-[300px_1fr] lg:pb-0">
         {/* Left side: Deck list (desktop only, phones use the bottom bar) */}
         <aside className="hidden lg:sticky lg:top-6 lg:block lg:self-start">
-          {deckPanel}
+          {renderDeckPanel(true)}
         </aside>
 
         {/* Right side: Search and cards */}
@@ -897,7 +928,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
                 type="button"
                 onClick={() => updateFilter("ownedOnly", !filters.ownedOnly)}
                 aria-pressed={filters.ownedOnly}
-                className={`flex-1 rounded-xl px-5 py-3 text-base font-medium transition-colors sm:flex-none ${
+                // Phones: hidden here because Owned lives inside the Filters popover
+                className={`hidden flex-1 rounded-xl px-5 py-3 text-base font-medium transition-colors sm:flex-none lg:inline-block ${
                   filters.ownedOnly
                     ? "bg-foreground text-background"
                     : "bg-card text-foreground ring-1 ring-foreground/15 hover:bg-muted"
@@ -972,6 +1004,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
                     onAdd={() => addToDeck(card)}
                     addLabel={`Add ${card.name} to deck`}
                     addDisabled={!canAdd(card.id)}
+                    // Phones: no + button. Tap the card, then "Add to deck" in its details.
+                    hideAddOnMobile
                   />
                 ))}
               </div>
@@ -1005,6 +1039,17 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
               {totalCards} / {DECK_LIMIT} cards
             </p>
           </div>
+
+          {/* New deck sits next to the deck name on phones, outside the deck sheet */}
+          <Button
+            variant="outline"
+            className="h-11 px-4 text-base"
+            onClick={startNewDeck}
+          >
+            <Plus className="size-4" />
+            New
+          </Button>
+
           <Button className="h-11 px-5 text-base" onClick={() => setDeckOpen(true)}>
             View deck
           </Button>
@@ -1035,7 +1080,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
                 <X className="size-5" />
               </Button>
             </div>
-            {deckPanel}
+            {renderDeckPanel(false)}
           </div>
         </div>
       )}
@@ -1072,178 +1117,151 @@ function FiltersDropdown({
 }: {
   filters: Filters;
   groups: FilterGroup[];
-  onChange: <K extends FilterKey | "sortOrder">(
+  onChange: <K extends FilterKey | "sortOrder" | "ownedOnly">(
     key: K,
     value: Filters[K],
   ) => void;
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Total options picked across all groups, plus 1 if the sort was changed
   const activeCount =
     groups.reduce((sum, group) => sum + filters[group.key].length, 0) +
     (filters.sortOrder !== "az" ? 1 : 0);
 
-  // Add the option if it isn't picked yet, remove it if it is
-  function toggleOptions(key: FilterKey, options: string[]) {
-    onChange(key, options);
+  // On phones the Owned toggle is inside this popover, so it counts too
+  let mobileActiveCount = activeCount;
+  if (filters.ownedOnly) {
+    mobileActiveCount += 1;
   }
 
-  // Close dropdown when clicking outside or pressing Escape
-  useEffect(() => {
-    if (!open) return;
-
-    function onClickOutside(e: MouseEvent) {
-      // Base UI (shadcn base component library) renders things like selects as a
-      // React portal with this data attribute attached.
-      const baseUiPortal = document.querySelector("[data-base-ui-portal]");
-
-      if (
-        wrapperRef.current &&
-        !wrapperRef.current.contains(e.target as Node) &&
-        !baseUiPortal?.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    }
-
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", onClickOutside);
-    document.addEventListener("keydown", onKey);
-
-    return () => {
-      document.removeEventListener("mousedown", onClickOutside);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
+  // The Popover handles opening, closing on Escape or a tap outside, and the
+  // animation. It also knows the Select menus inside it belong to it, so
+  // picking an option doesn't close the filters.
   return (
-    <div ref={wrapperRef} className="relative flex-1 sm:flex-none">
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        className="w-full gap-2 px-5 py-6 text-base sm:w-auto"
+    <Popover open={open} onOpenChange={(next) => setOpen(next)}>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 gap-2 px-5 py-6 text-base sm:flex-none"
+          />
+        }
       >
         <SlidersHorizontal className="size-5" />
         Filters
+        {/* Desktop badge: just the filters inside this popover */}
         {activeCount > 0 && (
-          <span className="flex size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">
+          <span className="hidden size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white lg:flex">
             {activeCount}
+          </span>
+        )}
+        {/* Phone badge: also counts Owned, since it lives in here on phones */}
+        {mobileActiveCount > 0 && (
+          <span className="flex size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white lg:hidden">
+            {mobileActiveCount}
           </span>
         )}
         <ChevronDown
           className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
         />
-      </Button>
+      </PopoverTrigger>
 
-      {/* Phones: dark backdrop behind the filter sheet. Tapping it closes the sheet. */}
-      {open && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 sm:hidden"
-          onClick={() => setOpen(false)}
-        />
-      )}
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl p-6"
+      >
+        <h2 className="mb-5 text-xl font-semibold">Filter & Sort</h2>
+        <div className="space-y-5">
+          {/* Phones only: Owned moves in here from beside the Filters button */}
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 lg:hidden">
+            <span className="text-base font-medium">Owned cards only</span>
 
-      {/* Phones: slides up from the bottom. Bigger screens: floating panel under the button */}
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Card filters"
-          className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl border border-border bg-card p-6 shadow-xl sm:absolute sm:bottom-auto sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-[75vh] sm:w-96 sm:max-w-[calc(100vw-2rem)] sm:rounded-xl"
-        >
-          <h2 className="mb-5 text-xl font-semibold">Filter & Sort</h2>
-          <div className="space-y-5">
-            {groups.map((group) => (
-              <fieldset key={group.key}>
-                <legend className="mb-3 text-base font-medium">
-                  {group.label}
-                </legend>
-                <div className="flex flex-wrap gap-2">
-                  <Select
-                    multiple
-                    value={filters[group.key]}
-                    onValueChange={(values, details) => {
-                      toggleOptions(group.key, values);
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={group.label} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {group.options.map((item) => (
-                        <SelectItem key={item} value={item}>
-                          {item}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </fieldset>
-            ))}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={filters.ownedOnly}
+              aria-label="Owned cards only"
+              onClick={() => onChange("ownedOnly", !filters.ownedOnly)}
+              className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
+                filters.ownedOnly ? "bg-green-600" : "bg-gray-400"
+              }`}
+            >
+              <span
+                className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
+                  filters.ownedOnly ? "translate-x-6" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
 
-            {/* Sort dropdown */}
-            <div className="space-y-2">
-              <label
-                htmlFor="builder-sort-order"
-                className="text-base font-medium"
+          {groups.map((group) => (
+            <fieldset key={group.key}>
+              <legend className="mb-3 text-base font-medium">
+                {group.label}
+              </legend>
+              <Select
+                multiple
+                value={filters[group.key]}
+                onValueChange={(values) => onChange(group.key, values)}
               >
-                Sort by
-              </label>
-
-              {/* <select
-                id="builder-sort-order"
-                value={filters.sortOrder}
-                onChange={(e) => onChange("sortOrder", e.target.value)}
-                className="w-full rounded-md border border-border bg-background p-3 text-base"
-              >
-                <option value="az">Name: A–Z</option>
-                <option value="za">Name: Z–A</option>
-              </select> */}
-              <Select value={filters.sortOrder} onValueChange={(e, v) => onChange("sortOrder", e)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Sort Order" />
+                  <SelectValue placeholder={group.label} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem key="az" value="az">Name: A-Z</SelectItem>
-                  <SelectItem key="za" value="za">Name: Z-A</SelectItem>
+                  {group.options.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-            </div>
-          </div>
+            </fieldset>
+          ))}
 
-          {/* Clear and Done */}
-          <div className="mt-6 flex items-center justify-between gap-3 border-t border-border pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClear}
-              disabled={activeCount === 0}
-              className="text-base"
+          {/* Sort dropdown */}
+          <div className="space-y-2">
+            <p className="text-base font-medium">Sort by</p>
+            <Select
+              value={filters.sortOrder}
+              onValueChange={(value) => onChange("sortOrder", value)}
             >
-              Clear filters
-            </Button>
-
-            <Button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="text-base"
-            >
-              Done
-            </Button>
+              <SelectTrigger className="w-full" aria-label="Sort by">
+                <SelectValue placeholder="Sort Order" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="az">Name: A-Z</SelectItem>
+                <SelectItem value="za">Name: Z-A</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Clear and Done */}
+        <div className="mt-6 flex items-center justify-between gap-3 border-t border-border pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClear}
+            disabled={activeCount === 0}
+            className="text-base"
+          >
+            Clear filters
+          </Button>
+
+          <Button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="text-base"
+          >
+            Done
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
