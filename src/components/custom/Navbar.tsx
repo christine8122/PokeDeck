@@ -104,7 +104,7 @@ export default function Navbar() {
   );
 
   return (
-    <nav className="relative border-b border-border bg-white">
+    <nav className="sticky top-0 z-50 border-b border-border bg-white lg:relative lg:z-auto">      
       <div className="flex h-16 w-full items-center px-4 sm:px-8 lg:h-20">
         {/* PokéDecks Logo */}
         <Link href="/" className="flex items-center gap-3">
