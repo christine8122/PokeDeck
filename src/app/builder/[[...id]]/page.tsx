@@ -43,6 +43,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { notFound, useRouter } from "next/navigation";
 import { DeckRow } from "@/lib/supabase/types";
 
@@ -191,7 +196,7 @@ type SavedDeck = {
   public: boolean;
 };
 
-const NEW_DECK_NAME = "New Deck";
+const NEW_DECK_NAME = "Type a deck name...";
 
 const countCards = (entries: DeckEntry[]) =>
   entries.reduce((sum, entry) => sum + entry.qty, 0);
@@ -226,6 +231,29 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const [isSaving, setIsSaving] = useState(false); // tracks whether a deck is being saved
 
   const [loadedSoFar, setLoadedSoFar] = useState(0);
+
+  // Phones only: the deck slides up from the bottom when this is true
+  const [deckOpen, setDeckOpen] = useState(false);
+
+  // While the deck sheet is open, stop the page behind it from scrolling
+  useEffect(() => {
+    if (!deckOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [deckOpen]);
+
+  // Escape closes the deck sheet (unless a card's details are open on top of it)
+  useEffect(() => {
+    if (!deckOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !selected) setDeckOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deckOpen, selected]);
 
   // Load every card from Supabase, 1000 at a time, when the page opens
   useEffect(() => {
@@ -553,8 +581,8 @@ async function saveDeck() {
         prev.map((saved) =>
           saved.id === currentDeckId
             ? { ...saved, name, entries, public: isPublic }
-            : saved
-        )
+            : saved,
+        ),
       );
     } else {
       const { data, error } = await supabase
@@ -568,19 +596,16 @@ async function saveDeck() {
         .single();
 
       if (error) throw error;
+      if (!data) throw new Error("Supabase didn't return the new deck");
 
+      // The page stays mounted when the URL changes, so update it directly:
+      // this deck now exists, so the next save updates it instead of making a copy
+      setCurrentDeckId(data.id);
       setSavedDecks((prev) => [
         ...prev,
-        {
-          id: data.id,
-          name: name,
-          entries: entries,
-          public: isPublic,
-        },
+        { id: data.id, name, entries, public: isPublic },
       ]);
-
-      setCurrentDeckId(data.id);
-      router.push(`/builder/${data.id}`);
+      router.replace(`/builder/${data.id}`);
     }
 
     setDeckName(name);
@@ -611,9 +636,15 @@ async function saveDeck() {
     setDeck(saved.entries.map((entry) => ({ ...entry })));
     setIsDirty(false);
     setJustSaved(false);
+
+    // Keep the URL in sync so it always matches the deck on screen
+    router.push(`/builder/${saved.id}`);
   }
 
-  function resetDeck(){
+  // Reset the page to a fresh, empty deck.
+  // Changing the URL alone doesn't do it: Next.js keeps this page mounted, and
+  // going to /builder when you're already on /builder does nothing at all.
+  function resetDeck() {
     setCurrentDeckId(null);
     setDeckName(NEW_DECK_NAME);
     setIsPublic(false);
@@ -621,10 +652,6 @@ async function saveDeck() {
     setSelected(null);
     setIsDirty(false);
     setJustSaved(false);
-  }
-
-  async function clearToNewDeck() {
-    await router.push("/builder");
   }
 
   function startNewDeck() {
@@ -650,21 +677,13 @@ async function saveDeck() {
       console.log(error.message);
       window.alert("Couldn't delete the deck. Please try again.");
       return;
-  }
+    }
 
-  // Remove the deleted deck from My Decks
+    // Take it out of My decks and go back to a fresh deck
     setSavedDecks((prev) =>
-      prev.filter((saved) => saved.id !== deckIdToDelete));
-
-    // Reset the editor
-    setCurrentDeckId(null);
-    setDeckName(NEW_DECK_NAME);
-    setIsPublic(false);
-    setDeck([]);
-    setSelected(null);
-    setIsDirty(false);
-    setJustSaved(false);
-
+      prev.filter((saved) => saved.id !== deckIdToDelete),
+    );
+    resetDeck();
     router.push("/builder");
   }
 
@@ -677,206 +696,217 @@ async function saveDeck() {
         ? "Not saved yet"
         : null;
 
-  return (
-    <Container>
-      <div className="grid gap-8 lg:grid-cols-[300px_1fr]">
-        {/* Left side: Deck list */}
-        <aside className="lg:sticky lg:top-6 lg:self-start">
-          <Card className="shadow-md">
-            <CardContent className="space-y-5">
-              <input
-                value={deckName}
-                onChange={(e) => {
-                  setDeckName(e.target.value);
-                  markChanged();
-                }}
-                aria-label="Deck name"
-                className="w-full rounded-md bg-transparent text-2xl font-extrabold outline-none focus:ring-2 focus:ring-pink-300"
+  // The deck editor and saved decks. Shown in the sidebar on desktop and in a
+  // slide-up sheet on phones, so it's written once here and used in both spots.
+  // Phones pass false because their New deck button lives in the bottom bar.
+  const renderDeckPanel = (showNewDeck: boolean) => (
+    <>
+      <Card className="shadow-md">
+        <CardContent className="space-y-5">
+          <input
+            value={deckName}
+            onChange={(e) => {
+              setDeckName(e.target.value);
+              markChanged();
+            }}
+            aria-label="Deck name"
+            className="w-full rounded-md bg-transparent text-2xl font-extrabold outline-none focus:ring-2 focus:ring-pink-300"
+          />
+
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <span id="deck-visibility-label" className="text-base font-semibold">
+              Public deck
+            </span>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isPublic}
+              aria-labelledby="deck-visibility-label"
+              onClick={() => {
+                setIsPublic(!isPublic);
+                markChanged();
+              }}
+              className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
+                isPublic ? "bg-green-600" : "bg-gray-400"
+              }`}
+            >
+              <span
+                className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
+                  isPublic ? "translate-x-6" : "translate-x-0"
+                }`}
               />
+            </button>
+          </div>
 
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
-                <span id="deck-visibility-label" className="text-base font-semibold">
-                  Public deck
-                </span>
+          <p className="text-sm text-muted-foreground">
+            {isPublic
+              ? "Public — other users can view this deck."
+              : "Private — only you can view this deck."}
+            {" "}Click Save to keep changes.
+          </p>
 
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isPublic}
-                  aria-labelledby="deck-visibility-label"
-                  onClick={() => {
-                    setIsPublic(!isPublic);
-                    markChanged();
-                  }}
-                  className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
-                    isPublic ? "bg-green-600" : "bg-gray-400"
-                  }`}
-                >
+          <DeckProgress total={totalCards} />
+
+          {deck.length === 0 ? (
+            <p className="py-8 text-center text-xl text-muted-foreground">
+              No cards yet. Hit the + on a card to add it.
+            </p>
+          ) : (
+            <ul className="max-h-96 space-y-2 overflow-y-auto">
+              {deck.map(({ card, qty }) => (
+                <li key={card.id} className="flex items-center gap-3 py-2">
                   <span
-                    className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
-                      isPublic ? "translate-x-6" : "translate-x-0"
-                    }`}
+                    className={`size-5 shrink-0 rounded-full ${getCardColor(
+                      primaryType(card),
+                    )}`}
                   />
-                </button>
-              </div>
 
-              <p className="text-sm text-muted-foreground">
-                {isPublic
-                  ? "Public — other users can view this deck."
-                  : "Private — only you can view this deck."}
-                {" "}Click Save to keep changes.
-              </p>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(card)}
+                    className="min-w-0 flex-1 truncate text-left text-sm font-extrabold uppercase tracking-wide hover:text-pink-500"
+                  >
+                    {card.name}
+                  </button>
 
-              <DeckProgress total={totalCards} />
+                  <span className="text-sm font-extrabold">x{qty}</span>
 
-              {deck.length === 0 ? (
-                <p className="py-8 text-center text-xl text-muted-foreground">
-                  No cards yet. Hit the + on a card to add it.
-                </p>
-              ) : (
-                <ul className="max-h-96 space-y-2 overflow-y-auto">
-                  {deck.map(({ card, qty }) => (
-                    <li key={card.id} className="flex items-center gap-3 py-2">
-                      <span
-                        className={`size-5 shrink-0 rounded-full ${getCardColor(
-                          primaryType(card),
-                        )}`}
-                      />
+                  <button
+                    type="button"
+                    onClick={() => removeOne(card.id)}
+                    aria-label={`Remove one ${card.name}`}
+                    className="flex size-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
-                      <button
-                        type="button"
-                        onClick={() => setSelected(card)}
-                        className="min-w-0 flex-1 truncate text-left text-sm font-extrabold uppercase tracking-wide hover:text-pink-500"
-                      >
-                        {card.name}
-                      </button>
+          {/* Collection check */}
+          <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-lg text-gray-700">
+            <Check className="size-5 shrink-0 text-green-600" />
+            {ownedInDeck} of {totalCards} cards already in your collection
+          </div>
 
-                      <span className="text-sm font-extrabold">x{qty}</span>
-
-                      <button
-                        type="button"
-                        onClick={() => removeOne(card.id)}
-                        aria-label={`Remove one ${card.name}`}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <X className="size-5" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {/* Collection check */}
-              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-lg text-gray-700">
-                <Check className="size-5 shrink-0 text-green-600" />
-                {ownedInDeck} of {totalCards} cards already in your collection
-              </div>
-
-              {/* Save (and delete, once it's been saved) */}
-              <div className="flex gap-2">
-              <Button
-                className="flex-1 py-6 text-base"
-                onClick={saveDeck}
-                disabled={
+          {/* Save (and delete, once it's been saved) */}
+          <div className="flex gap-2">
+            <Button
+              className="flex-1 py-6 text-base"
+              onClick={saveDeck}
+              disabled={
                 isSaving ||
                 deck.length === 0 ||
                 (currentDeckId !== null && !isDirty)
-              } 
-              >
+              }
+            >
               {isSaving ? (
                 <>
-                <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Saving...
+                  <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Saving...
                 </>
-                ) : (
-                <>
-                <Save className="size-5" />
-                {currentDeckId ? "Save changes" : "Save deck"}
-                 </>
-               )}
-             </Button>
-
-                {currentDeckId && (
-                  <Button
-                    variant="outline"
-                    className="py-6"
-                    aria-label={`Delete ${deckName}`}
-                    onClick={deleteDeck}
-                  >
-                    <Trash2 className="size-5" />
-                  </Button>
-                )}
-              </div>
-
-              {saveStatus && (
-                <p className="text-center text-sm text-muted-foreground">
-                  {saveStatus}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* All saved decks */}
-          <Card className="mt-6 shadow-md">
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-bold">My Decks</h2>
-                <Button variant="outline" size="sm" onClick={startNewDeck}>
-                  <Plus className="size-4" />
-                  New deck
-                </Button>
-              </div>
-
-              {savedDecks.length === 0 ? (
-                <p className="py-2 text-sm text-muted-foreground">
-                  Decks you save will show up here.
-                </p>
               ) : (
-                <ul className="space-y-1">
-                  {savedDecks.map((saved) => {
-                    const isOpen = saved.id === currentDeckId;
-                    const firstCard = saved.entries[0]?.card;
-
-                    return (
-                      <li key={saved.id}>
-                        <button
-                          type="button"
-                          onClick={() => openDeck(saved)}
-                          aria-current={isOpen ? "true" : undefined}
-                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
-                            isOpen
-                              ? "bg-muted ring-1 ring-foreground/15"
-                              : "hover:bg-muted"
-                          }`}
-                        >
-                          <span
-                            className={`size-4 shrink-0 rounded-full ${getCardColor(
-                              firstCard ? primaryType(firstCard) : undefined,
-                            )}`}
-                          />
-                          <span className="min-w-0 flex-1 truncate font-semibold">
-                            {saved.name}
-                            {isOpen && isDirty && (
-                              <span
-                                className="text-pink-500"
-                                title="Unsaved changes"
-                              >
-                                {" "}
-                                •
-                              </span>
-                            )}
-                          </span>
-                          <span className="shrink-0 text-sm text-muted-foreground">
-                            {countCards(saved.entries)} cards
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <>
+                  <Save className="size-5" />
+                  {currentDeckId ? "Save changes" : "Save deck"}
+                </>
               )}
-            </CardContent>
-          </Card>
+            </Button>
+
+            {currentDeckId && (
+              <Button
+                variant="outline"
+                className="py-6"
+                aria-label={`Delete ${deckName}`}
+                onClick={deleteDeck}
+              >
+                <Trash2 className="size-5" />
+              </Button>
+            )}
+          </div>
+
+          {saveStatus && (
+            <p className="text-center text-sm text-muted-foreground">
+              {saveStatus}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* All saved decks */}
+      <Card className="mt-6 shadow-md">
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-xl font-bold">My Decks</h2>
+            {showNewDeck && (
+              <Button variant="outline" size="sm" onClick={startNewDeck}>
+                <Plus className="size-4" />
+                New deck
+              </Button>
+            )}
+          </div>
+
+          {savedDecks.length === 0 ? (
+            <p className="py-2 text-sm text-muted-foreground">
+              Decks you save will show up here.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {savedDecks.map((saved) => {
+                const isOpen = saved.id === currentDeckId;
+                const firstCard = saved.entries[0]?.card;
+
+                return (
+                  <li key={saved.id}>
+                    <button
+                      type="button"
+                      onClick={() => openDeck(saved)}
+                      aria-current={isOpen ? "true" : undefined}
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
+                        isOpen
+                          ? "bg-muted ring-1 ring-foreground/15"
+                          : "hover:bg-muted"
+                      }`}
+                    >
+                      <span
+                        className={`size-4 shrink-0 rounded-full ${getCardColor(
+                          firstCard ? primaryType(firstCard) : undefined,
+                        )}`}
+                      />
+                      <span className="min-w-0 flex-1 truncate font-semibold">
+                        {saved.name}
+                        {isOpen && isDirty && (
+                          <span
+                            className="text-pink-500"
+                            title="Unsaved changes"
+                          >
+                            {" "}
+                            •
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-sm text-muted-foreground">
+                        {countCards(saved.entries)} cards
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+
+  return (
+    <Container>
+      <div className="grid gap-8 pb-24 lg:grid-cols-[300px_1fr] lg:pb-0">
+        {/* Left side: Deck list (desktop only, phones use the bottom bar) */}
+        <aside className="hidden lg:sticky lg:top-6 lg:block lg:self-start">
+          {renderDeckPanel(true)}
         </aside>
 
         {/* Right side: Search and cards */}
@@ -907,31 +937,35 @@ async function saveDeck() {
               )}
             </div>
 
-            <FiltersDropdown
-              filters={filters}
-              groups={filterGroups}
-              onChange={updateFilter}
-              onClear={() =>
-                changeFilters((prev) => ({
-                  ...emptyFilters,
-                  search: prev.search,
-                  ownedOnly: prev.ownedOnly,
-                }))
-              }
-            />
+            {/* Filters and Owned sit side by side, even on phones */}
+            <div className="flex gap-3">
+              <FiltersDropdown
+                filters={filters}
+                groups={filterGroups}
+                onChange={updateFilter}
+                onClear={() =>
+                  changeFilters((prev) => ({
+                    ...emptyFilters,
+                    search: prev.search,
+                    ownedOnly: prev.ownedOnly,
+                  }))
+                }
+              />
 
-            <button
-              type="button"
-              onClick={() => updateFilter("ownedOnly", !filters.ownedOnly)}
-              aria-pressed={filters.ownedOnly}
-              className={`rounded-xl px-5 py-3 text-base font-medium transition-colors ${
-                filters.ownedOnly
-                  ? "bg-foreground text-background"
-                  : "bg-card text-foreground ring-1 ring-foreground/15 hover:bg-muted"
-              }`}
-            >
-              Owned
-            </button>
+              <button
+                type="button"
+                onClick={() => updateFilter("ownedOnly", !filters.ownedOnly)}
+                aria-pressed={filters.ownedOnly}
+                // Phones: hidden here because Owned lives inside the Filters popover
+                className={`hidden flex-1 rounded-xl px-5 py-3 text-base font-medium transition-colors sm:flex-none lg:inline-block ${
+                  filters.ownedOnly
+                    ? "bg-foreground text-background"
+                    : "bg-card text-foreground ring-1 ring-foreground/15 hover:bg-muted"
+                }`}
+              >
+                Owned
+              </button>
+            </div>
           </div>
 
           {/* Result count and clear all */}
@@ -939,7 +973,7 @@ async function saveDeck() {
             ref={gridTopRef}
             className="mb-6 flex min-h-9 scroll-mt-6 items-center justify-between gap-3"
           >
-            <span className="text-xl text-muted-foreground">
+            <span className="text-base text-muted-foreground sm:text-xl">
               {cards === null
                 ? `Loading cards... (${loadedSoFar} so far)`
                 : visibleCards.length === 0
@@ -987,7 +1021,7 @@ async function saveDeck() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-3 sm:gap-6 xl:grid-cols-3">
                 {shownCards.map((card) => (
                   <PokemonCard
                     key={card.id}
@@ -998,6 +1032,8 @@ async function saveDeck() {
                     onAdd={() => addToDeck(card)}
                     addLabel={`Add ${card.name} to deck`}
                     addDisabled={!canAdd(card.id)}
+                    // Phones: no + button. Tap the card, then "Add to deck" in its details.
+                    hideAddOnMobile
                   />
                 ))}
               </div>
@@ -1013,6 +1049,69 @@ async function saveDeck() {
           )}
         </section>
       </div>
+
+      {/* Phones: deck summary pinned to the bottom of the screen */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background px-4 py-3 shadow-lg lg:hidden">
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-bold">
+              {deckName}
+              {isDirty && (
+                <span className="text-pink-500" title="Unsaved changes">
+                  {" "}
+                  •
+                </span>
+              )}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {totalCards} / {DECK_LIMIT} cards
+            </p>
+          </div>
+
+          {/* New deck sits next to the deck name on phones, outside the deck sheet */}
+          <Button
+            variant="outline"
+            className="h-11 px-4 text-base"
+            onClick={startNewDeck}
+          >
+            <Plus className="size-4" />
+            New
+          </Button>
+
+          <Button className="h-11 px-5 text-base" onClick={() => setDeckOpen(true)}>
+            View deck
+          </Button>
+        </div>
+      </div>
+
+      {/* Phones: the deck slides up as a sheet */}
+      {deckOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setDeckOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Your deck"
+            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-background p-4 pb-8 shadow-2xl"
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Your deck</h2>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close deck"
+                onClick={() => setDeckOpen(false)}
+              >
+                <X className="size-5" />
+              </Button>
+            </div>
+            {renderDeckPanel(false)}
+          </div>
+        </div>
+      )}
 
       {/* Card details modal */}
       {selected && (
@@ -1046,170 +1145,152 @@ function FiltersDropdown({
 }: {
   filters: Filters;
   groups: FilterGroup[];
-  onChange: <K extends FilterKey | "sortOrder">(
+  onChange: <K extends FilterKey | "sortOrder" | "ownedOnly">(
     key: K,
     value: Filters[K],
   ) => void;
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Total options picked across all groups, plus 1 if the sort was changed
   const activeCount =
     groups.reduce((sum, group) => sum + filters[group.key].length, 0) +
     (filters.sortOrder !== "az" ? 1 : 0);
 
-  // Add the option if it isn't picked yet, remove it if it is
-  function toggleOptions(key: FilterKey, options: string[]) {
-    onChange(key, options);
+  // On phones the Owned toggle is inside this popover, so it counts too
+  let mobileActiveCount = activeCount;
+  if (filters.ownedOnly) {
+    mobileActiveCount += 1;
   }
 
-  // Close dropdown when clicking outside or pressing Escape
-  useEffect(() => {
-    if (!open) return;
-
-    function onClickOutside(e: MouseEvent) {
-      // Base UI (shadcn base component library) renders things like selects as a
-      // React portal with this data attribute attached.
-      const baseUiPortal = document.querySelector("[data-base-ui-portal]");
-
-      if (
-        wrapperRef.current &&
-        !wrapperRef.current.contains(e.target as Node) &&
-        !baseUiPortal?.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    }
-
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", onClickOutside);
-    document.addEventListener("keydown", onKey);
-
-    return () => {
-      document.removeEventListener("mousedown", onClickOutside);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  // The Popover handles opening, closing on Escape or a tap outside, and the
+  // animation. It also knows the Select menus inside it belong to it, so
+  // picking an option doesn't close the filters.
 
   return (
-    <div ref={wrapperRef} className="relative shrink-0">
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        className="gap-2 px-5 py-6 text-base"
+    <Popover open={open} onOpenChange={(next) => setOpen(next)}>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 gap-2 px-5 py-6 text-base sm:flex-none"
+          />
+        }
       >
         <SlidersHorizontal className="size-5" />
         Filters
+        {/* Desktop badge: just the filters inside this popover */}
         {activeCount > 0 && (
-          <span className="flex size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">
+          <span className="hidden size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white lg:flex">
             {activeCount}
+          </span>
+        )}
+        {/* Phone badge: also counts Owned, since it lives in here on phones */}
+        {mobileActiveCount > 0 && (
+          <span className="flex size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white lg:hidden">
+            {mobileActiveCount}
           </span>
         )}
         <ChevronDown
           className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
         />
-      </Button>
+      </PopoverTrigger>
 
-      {/* Floating panel - does not move the cards */}
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Card filters"
-          className="absolute right-0 z-40 mt-2 max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl"
-        >
-          <h2 className="mb-5 text-xl font-semibold">Filter & Sort</h2>
-          <div className="space-y-5">
-            {groups.map((group) => (
-              <fieldset key={group.key}>
-                <legend className="mb-3 text-base font-medium">
-                  {group.label}
-                </legend>
-                <div className="flex flex-wrap gap-2">
-                  <Select
-                    multiple
-                    value={filters[group.key]}
-                    onValueChange={(values, details) => {
-                      toggleOptions(group.key, values);
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={group.label} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {group.options.map((item) => (
-                        <SelectItem key={item} value={item}>
-                          {item}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </fieldset>
-            ))}
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl p-6"
+      >
+        <h2 className="mb-5 text-xl font-semibold">Filter & Sort</h2>
+        <div className="space-y-5">
+          {/* Phones only: Owned moves in here from beside the Filters button */}
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 lg:hidden">
+            <span className="text-base font-medium">Owned cards only</span>
 
-            {/* Sort dropdown */}
-            <div className="space-y-2">
-              <label
-                htmlFor="builder-sort-order"
-                className="text-base font-medium"
+            <button
+              type="button"
+              role="switch"
+              aria-checked={filters.ownedOnly}
+              aria-label="Owned cards only"
+              onClick={() => onChange("ownedOnly", !filters.ownedOnly)}
+              className={`inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2 ${
+                filters.ownedOnly ? "bg-green-600" : "bg-gray-400"
+              }`}
+            >
+              <span
+                className={`size-6 rounded-full bg-white shadow-sm transition-transform ${
+                  filters.ownedOnly ? "translate-x-6" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          {groups.map((group) => (
+            <fieldset key={group.key}>
+              <legend className="mb-3 text-base font-medium">
+                {group.label}
+              </legend>
+              <Select
+                multiple
+                value={filters[group.key]}
+                onValueChange={(values) => onChange(group.key, values)}
               >
-                Sort by
-              </label>
-
-              {/* <select
-                id="builder-sort-order"
-                value={filters.sortOrder}
-                onChange={(e) => onChange("sortOrder", e.target.value)}
-                className="w-full rounded-md border border-border bg-background p-3 text-base"
-              >
-                <option value="az">Name: A–Z</option>
-                <option value="za">Name: Z–A</option>
-              </select> */}
-              <Select value={filters.sortOrder} onValueChange={(e, v) => onChange("sortOrder", e)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Sort Order" />
+                  <SelectValue placeholder={group.label} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem key="az" value="az">Name: A-Z</SelectItem>
-                  <SelectItem key="za" value="za">Name: Z-A</SelectItem>
+                  {group.options.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-            </div>
-          </div>
+            </fieldset>
+          ))}
 
-          {/* Clear and Done */}
-          <div className="mt-6 flex items-center justify-between gap-3 border-t border-border pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClear}
-              disabled={activeCount === 0}
-              className="text-base"
+          {/* Sort dropdown */}
+          <div className="space-y-2">
+            <p className="text-base font-medium">Sort by</p>
+            <Select
+              value={filters.sortOrder}
+              onValueChange={(value) => onChange("sortOrder", value)}
             >
-              Clear filters
-            </Button>
-
-            <Button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="text-base"
-            >
-              Done
-            </Button>
+              <SelectTrigger className="w-full" aria-label="Sort by">
+                <SelectValue placeholder="Sort Order" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="az">Name: A-Z</SelectItem>
+                <SelectItem value="za">Name: Z-A</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Clear and Done */}
+        <div className="mt-6 flex items-center justify-between gap-3 border-t border-border pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClear}
+            disabled={activeCount === 0}
+            className="text-base"
+          >
+            Clear filters
+          </Button>
+
+          <Button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="text-base"
+          >
+            Done
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1245,7 +1326,7 @@ function Pagination({
   return (
     <nav
       aria-label="Card pages"
-      className="mt-8 flex flex-wrap items-center justify-center gap-2"
+      className="mt-8 flex items-center justify-center gap-2"
     >
       <Button
         variant="outline"
@@ -1257,28 +1338,36 @@ function Pagination({
         Prev
       </Button>
 
-      {getPageItems(currentPage, totalPages).map((item, i) =>
-        item === "..." ? (
-          <span
-            key={`dots-${i}`}
-            className="px-1 text-base text-muted-foreground"
-          >
-            …
-          </span>
-        ) : (
-          <Button
-            key={item}
-            variant={item === currentPage ? "default" : "outline"}
-            size="icon"
-            className="text-base"
-            aria-label={`Page ${item}`}
-            aria-current={item === currentPage ? "page" : undefined}
-            onClick={() => onPageChange(item)}
-          >
-            {item}
-          </Button>
-        ),
-      )}
+      {/* Phones: just "3 of 20" */}
+      <span className="px-2 text-base text-muted-foreground sm:hidden">
+        {currentPage} of {totalPages}
+      </span>
+
+      {/* Bigger screens: numbered page buttons */}
+      <div className="hidden items-center gap-2 sm:flex">
+        {getPageItems(currentPage, totalPages).map((item, i) =>
+          item === "..." ? (
+            <span
+              key={`dots-${i}`}
+              className="px-1 text-base text-muted-foreground"
+            >
+              …
+            </span>
+          ) : (
+            <Button
+              key={item}
+              variant={item === currentPage ? "default" : "outline"}
+              size="icon"
+              className="text-base"
+              aria-label={`Page ${item}`}
+              aria-current={item === currentPage ? "page" : undefined}
+              onClick={() => onPageChange(item)}
+            >
+              {item}
+            </Button>
+          ),
+        )}
+      </div>
 
       <Button
         variant="outline"

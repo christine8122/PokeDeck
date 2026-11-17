@@ -55,36 +55,36 @@ export default function DashboardPage() {
   return (
     <Container>
       {/* Heading */}
-      <header className="mb-8">
-        <h1 className="text-6xl font-extrabold tracking-tight">Welcome Back</h1>
-        <p className="mt-2 text-2xl text-muted-foreground">
+      <header className="mb-6 sm:mb-8">
+        <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl">Welcome Back</h1>
+        <p className="mt-2 text-lg text-muted-foreground sm:text-2xl">
           Here&apos;s where your collection and decks stand.
         </p>
       </header>
 
-      {/* Stat cards */}
-      <section className="mb-8 grid gap-6 sm:grid-cols-3">
+      {/* Stat cards: 3 across even on phones, just smaller */}
+      <section className="mb-6 grid grid-cols-3 gap-3 sm:mb-8 sm:gap-6">
         {stats.map((stat) => (
           <Card key={stat.label} className={`ring-2 shadow-sm ${stat.ring}`}>
-            <CardContent>
-              <p className="text-5xl font-extrabold">{stat.value}</p>
-              <p className="mt-1 text-2xl text-muted-foreground">{stat.label}</p>
+            <CardContent className="px-3 sm:px-6">
+              <p className="text-3xl font-extrabold sm:text-5xl">{stat.value}</p>
+              <p className="mt-1 text-sm leading-tight text-muted-foreground sm:text-2xl">{stat.label}</p>
             </CardContent>
           </Card>
         ))}
       </section>
 
       {/* Recent decks */}
-      <Card className="mb-8 shadow-sm">
+      <Card className="mb-6 shadow-sm sm:mb-8">
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Recent Decks</CardTitle>
+          <CardTitle className="text-xl font-bold sm:text-3xl">Recent Decks</CardTitle>
           <CardAction>
             <Link
               href="/builder"
               className={buttonVariants({ variant: "link", size: "default" })}
             >
-              <span className="text-lg">View all</span>
-              <ChevronRight className="h-6 w-6" />
+              <span className="text-base sm:text-lg">View all</span>
+              <ChevronRight className="size-5 sm:size-6" />
             </Link>
           </CardAction>
         </CardHeader>
@@ -97,14 +97,14 @@ export default function DashboardPage() {
                   href={`/builder/${deck.id}`}
                   className="flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-muted"
                 >
-                  <span className={`size-16 shrink-0 rounded-lg ${deck.color}`} />
-                  <div className="flex-1">
-                    <p className="text-2xl">{deck.name}</p>
-                    <p className="text-lg text-muted-foreground">
+                  <span className={`size-12 shrink-0 rounded-lg sm:size-16 ${deck.color}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-lg sm:text-2xl">{deck.name}</p>
+                    <p className="text-sm text-muted-foreground sm:text-lg">
                       {deck.cards} cards · edited {deck.edited}
                     </p>
                   </div>
-                  <ChevronRight className="size-4 text-muted-foreground" />
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                 </Link>
               </li>
             ))}
@@ -115,20 +115,20 @@ export default function DashboardPage() {
       {/* Recently added */}
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Recently added to collection</CardTitle>
+          <CardTitle className="text-xl font-bold sm:text-3xl">Recently added to collection</CardTitle>
           <CardAction>
             <Link
               href="/collection"
               className={buttonVariants({ variant: "link", size: "default" })}
             >
-              <span className="text-lg">View Collection</span>
-              <ChevronRight className="h-6 w-6" />
+              <span className="text-base sm:text-lg">View Collection</span>
+              <ChevronRight className="size-5 sm:size-6" />
             </Link>
           </CardAction>
         </CardHeader>
 
         <CardContent>
-          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4 min-h-[280px]">
+          <div className="grid min-h-[280px] grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
             {recentCards.map((card) => (
               <CollectionPreviewCard key={card.id} card={card} />
             ))}
@@ -143,7 +143,7 @@ export default function DashboardPage() {
 
 function CollectionPreviewCard({ card }: { card: (typeof recentCards)[number] }) {
   return (
-    <Card className="relative gap-5 pt-0 shadow-md">
+    <Card className="relative gap-3 overflow-hidden pt-0 shadow-md sm:gap-5">
       {/* Rarity ribbon */}
       <span
         className={`absolute -left-8 top-4 z-10 w-28 -rotate-45 py-1 text-center text-xs font-bold text-white shadow ${rarityRibbon[card.rarity]}`}
@@ -152,29 +152,29 @@ function CollectionPreviewCard({ card }: { card: (typeof recentCards)[number] })
       </span>
 
       {/* Colored header bar */}
-      <div className={`flex items-center justify-between px-3 py-2 ${card.header}`}>
-        <span className="w-full p-1 translate-x-2 text-center text-lg  text-white font-extrabold uppercase tracking-wide [text-shadow:2px_3px_4px_rgba(0,0,0,0.7)]">
+      <div className={`flex items-center justify-between gap-2 px-3 py-2 ${card.header}`}>
+        <span className="min-w-0 flex-1 translate-x-2 truncate p-1 text-center text-sm font-extrabold uppercase tracking-wide text-white [text-shadow:2px_3px_4px_rgba(0,0,0,0.7)] sm:text-lg">
           {card.name}
         </span>
-        <span className="rounded-full px-2 py-1 bg-white px-2 text-md font-semibold">
+        <span className="shrink-0 rounded-full bg-white px-2 py-1 text-sm font-semibold sm:text-base">
           x{card.qty}
         </span>
       </div>
 
-      <CardContent className="space-y-4 p-4">
+      <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-4">
         <div className="flex items-start gap-2">
           {/* Swap for <Image /> once you have card art */}
-          <div className="flex h-67 flex-1 items-center justify-center rounded-md bg-muted text-md font-semibold text-muted-foreground">
+          <div className="flex h-40 flex-1 items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground sm:h-67 sm:text-base">
             Picture
           </div>
         </div>
 
-        <p className="text-lg text-muted-foreground">
+        <p className="text-sm text-muted-foreground sm:text-lg">
           {card.set} · {card.number}
         </p>
 
         <span
-          className={`rounded-full px-3 py-2 text-md font-semibold text-white ${card.pill}`}
+          className={`inline-block rounded-full px-3 py-1 text-xs font-semibold text-white sm:py-2 sm:text-base ${card.pill}`}
         >
           {card.finish}
         </span>

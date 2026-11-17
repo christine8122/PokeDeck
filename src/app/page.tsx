@@ -1,4 +1,3 @@
-
 import Link from "next/link";
 
 import Container from "@/components/custom/Container";
@@ -12,46 +11,46 @@ const highlights = [
 export default function HomePage() {
   return (
     <Container>
-      <section className="grid items-center gap-12 py-12 md:grid-cols-2 md:py-20">
+      <section className="grid items-center gap-12 py-8 sm:py-12 md:grid-cols-2 md:py-20">
         {/* Left: copy */}
         <div>
-          <p className="text-2xl text-muted-foreground">
+          <p className="text-lg text-muted-foreground sm:text-2xl">
             Your collection, actually organized.
           </p>
 
-          <h1 className="mt-4 text-6xl font-extrabold leading-tight tracking-tight lg:text-7xl">
+          <h1 className="mt-4 text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
             Build the deck you can&apos;t find in your binder.
           </h1>
 
-          <p className="mt-6 max-w-lg text-2xl leading-relaxed text-muted-foreground">
+          <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground sm:text-2xl">
             Track every card you own, theorycraft with the ones you don&apos;t,
             and put a deck together without dumping a shoebox onto the table.
           </p>
 
-          {/* CTAs */}
-          <div className="mt-8 flex flex-wrap gap-4">
+          {/* CTAs: stacked full width on phones, side by side on bigger screens */}
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
             <Link
               href="/dashboard"
-              className="rounded-xl border-b-4 border-orange-600 bg-yellow-400 px-8 py-4 text-xl font-medium text-foreground transition-all hover:brightness-105 active:translate-y-0.5 active:border-b-2"
+              className="rounded-xl border-b-4 border-orange-600 bg-yellow-400 px-8 py-4 text-center text-lg font-medium text-foreground transition-all hover:brightness-105 active:translate-y-0.5 active:border-b-2 sm:text-xl"
             >
               Open my dashboard
             </Link>
             <Link
               href="/collection"
-              className="rounded-xl border-b-4 border-border bg-card px-8 py-4 text-xl font-medium text-foreground shadow-sm ring-1 ring-foreground/10 transition-all hover:bg-muted active:translate-y-0.5 active:border-b-2"
+              className="rounded-xl border-b-4 border-border bg-card px-8 py-4 text-center text-lg font-medium text-foreground shadow-sm ring-1 ring-foreground/10 transition-all hover:bg-muted active:translate-y-0.5 active:border-b-2 sm:text-xl"
             >
               Browse the database
             </Link>
           </div>
 
-          {/* Highlights row */}
-          <dl className="mt-10 grid grid-cols-3 gap-4 text-center">
+          {/* Highlights: stacked on phones, 3 across on bigger screens */}
+          <dl className="mt-10 grid grid-cols-1 gap-6 text-center sm:grid-cols-3 sm:gap-4">
             {highlights.map((item) => (
               <div key={item.title}>
-                <dt className="text-2xl ml-2  mx-3 font-extrabold uppercase tracking-wider">
+                <dt className="text-xl font-extrabold uppercase tracking-wider sm:text-2xl">
                   {item.title}
                 </dt>
-                <dd className="mt-2  text-lg text-muted-foreground">
+                <dd className="mt-1 text-base text-muted-foreground sm:mt-2 sm:text-lg">
                   {item.caption}
                 </dd>
               </div>
@@ -66,7 +65,7 @@ export default function HomePage() {
   );
 }
 
-// Three overlapping, tilted cards like the Figma hero
+// Three overlapping, tilted cards like the Figma
 function CardStack() {
   const cards = [
     { className: "right-6 top-0 rotate-[-6deg] bg-yellow-400/90" },
