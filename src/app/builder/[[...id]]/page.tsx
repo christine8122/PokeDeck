@@ -205,9 +205,7 @@ const countCards = (entries: DeckEntry[]) =>
 
 export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const router = useRouter();
-  // the param can either be an array of the slug (/foo/bar/) or undefined if we are at /
-  // since we are just querying the id, we only need to get the first value, and throw away the rest
-  // if for whatever reason the url is deformed enough to not have an id, not a loss, just assume we are on a new deck
+
   const { id } = use(props.params);
   const deckId = id?.at(0);
   const parsedDeckId = deckId ? parseInt(deckId) || null : null;
@@ -224,13 +222,13 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
 
-  // Every deck you've saved, and which one is open (null = a new, unsaved deck)
   const [savedDecks, setSavedDecks] = useState<SavedDeck[]>([]);
   const [currentDeckId, setCurrentDeckId] = useState<number | null>(
     parsedDeckId,
   );
   const [isDirty, setIsDirty] = useState(false); // changed since the last save
   const [justSaved, setJustSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // tracks whether a deck is being saved
 
   const [loadedSoFar, setLoadedSoFar] = useState(0);
 
@@ -553,25 +551,32 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   // ---- Saving and switching decks ----
 
   // Save the open deck: update it if it was saved before, otherwise add it to My decks
-  async function saveDeck() {
+async function saveDeck() {
+  if (isSaving) return;
+
+  setIsSaving(true);
+
+  try {
     const supabase = createClient();
     const name = deckName.trim() || "Untitled Deck";
     const entries = deck.map((entry) => ({ ...entry }));
+
     const cards: string[] = entries.flatMap<string>((en) =>
-      Array(en.qty).fill(en.card.id),
+      Array(en.qty).fill(en.card.id)
     );
 
-    if (currentDeckId) {
-      const { data, error } = await supabase
+    if (currentDeckId !== null) {
+      const { error } = await supabase
         .from("user_decks")
-        .update({ cards: cards, name: name, public: isPublic })
+        .update({
+          cards: cards,
+          name: name,
+          public: isPublic,
+        })
         .eq("id", currentDeckId);
 
-      if (error) {
-        console.log(error.message);
-        window.alert("Couldn't save the deck. Please try again");
-        return;
-      }
+      if (error) throw error;
+
       setSavedDecks((prev) =>
         prev.map((saved) =>
           saved.id === currentDeckId
@@ -589,11 +594,9 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
         })
         .select()
         .single();
-      if (error || data === null) {
-        console.log(error?.message);
-        window.alert("Couldn't save the deck. Please try again");
-        return;
-      }
+
+      if (error) throw error;
+      if (!data) throw new Error("Supabase didn't return the new deck");
 
       // The page stays mounted when the URL changes, so update it directly:
       // this deck now exists, so the next save updates it instead of making a copy
@@ -608,7 +611,13 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     setDeckName(name);
     setIsDirty(false);
     setJustSaved(true);
+  } catch (error) {
+    console.error("Error saving deck:", error);
+    window.alert("Couldn't save the deck. Please try again.");
+  } finally {
+    setIsSaving(false);
   }
+}
 
   // Ask before throwing away unsaved changes. Returns true if it's okay to continue.
   function okToLeaveDeck() {
@@ -635,19 +644,21 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   // Reset the page to a fresh, empty deck.
   // Changing the URL alone doesn't do it: Next.js keeps this page mounted, and
   // going to /builder when you're already on /builder does nothing at all.
-  function clearToNewDeck() {
+  function resetDeck() {
     setCurrentDeckId(null);
     setDeckName(NEW_DECK_NAME);
     setIsPublic(false);
     setDeck([]);
+    setSelected(null);
     setIsDirty(false);
     setJustSaved(false);
-    router.push("/builder");
   }
 
   function startNewDeck() {
     if (!okToLeaveDeck()) return;
-    clearToNewDeck();
+
+    resetDeck();
+    router.push("/builder");
   }
 
   async function deleteDeck() {
@@ -655,19 +666,25 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     if (!currentDeckId) return;
     if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) return;
 
-    const { data, error } = await supabase
+    const deckIdToDelete = currentDeckId;
+
+    const { error } = await supabase
       .from("user_decks")
       .delete()
-      .eq("id", currentDeckId);
+      .eq("id", deckIdToDelete);
+
     if (error) {
       console.log(error.message);
-      window.alert("Couldn't delete the deck. Please try again");
+      window.alert("Couldn't delete the deck. Please try again.");
       return;
     }
 
     // Take it out of My decks and go back to a fresh deck
-    setSavedDecks((prev) => prev.filter((saved) => saved.id !== currentDeckId));
-    clearToNewDeck();
+    setSavedDecks((prev) =>
+      prev.filter((saved) => saved.id !== deckIdToDelete),
+    );
+    resetDeck();
+    router.push("/builder");
   }
 
   // Little status line under the Save button
@@ -697,7 +714,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
           />
 
           <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
-            <span className="text-base font-semibold">
+            <span id="deck-visibility-label" className="text-base font-semibold">
               Public deck
             </span>
 
@@ -705,7 +722,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
               type="button"
               role="switch"
               aria-checked={isPublic}
-              aria-label="Public deck"
+              aria-labelledby="deck-visibility-label"
               onClick={() => {
                 setIsPublic(!isPublic);
                 markChanged();
@@ -780,11 +797,22 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
               className="flex-1 py-6 text-base"
               onClick={saveDeck}
               disabled={
-                deck.length === 0 || (currentDeckId !== null && !isDirty)
+                isSaving ||
+                deck.length === 0 ||
+                (currentDeckId !== null && !isDirty)
               }
             >
-              <Save className="size-5" />
-              {currentDeckId ? "Save changes" : "Save deck"}
+              {isSaving ? (
+                <>
+                  <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="size-5" />
+                  {currentDeckId ? "Save changes" : "Save deck"}
+                </>
+              )}
             </Button>
 
             {currentDeckId && (
@@ -1139,6 +1167,7 @@ function FiltersDropdown({
   // The Popover handles opening, closing on Escape or a tap outside, and the
   // animation. It also knows the Select menus inside it belong to it, so
   // picking an option doesn't close the filters.
+
   return (
     <Popover open={open} onOpenChange={(next) => setOpen(next)}>
       <PopoverTrigger

@@ -45,7 +45,7 @@ export function LoginForm({
       if (error) throw error;
 
       const next = new URLSearchParams(window.location.search).get("next");
-      router.push(safeNextPath(next, "/protected"));
+      router.push(safeNextPath(next, "/dashboard"));
     } catch (error: unknown) {
       setError(
         error instanceof Error ? error.message : "An error occurred"
