@@ -46,6 +46,7 @@ import {
 import { notFound, useRouter } from "next/navigation";
 import { DeckRow } from "@/lib/supabase/types";
 
+
 // ---- Supabase settings ----
 
 // Supabase returns at most 1000 rows per request, so we load in batches
@@ -71,6 +72,12 @@ type TcgCard = {
   owned: boolean;
 };
 
+// Cards that have already finised downloading
+let cachedCards: TcgCard[] | null = null;
+
+// A card download that is currently in progress
+let cardsPromise: Promise<TcgCard[]> | null = null;
+
 // Convert a Supabase row into the shape the page uses
 function rowToCard(row: CardRow): TcgCard {
   return {
@@ -88,31 +95,80 @@ function rowToCard(row: CardRow): TcgCard {
   };
 }
 
-function deckRowToCardList(cards: TcgCard[], row: DeckRow): DeckEntry[] {
-  return row.cards
-    .flatMap((c) => {
-      const resolved = cards!.findLast((tc) => tc.id === c);
-      if (resolved === undefined) {
-        return [];
+async function getCachedCards(): Promise<TcgCard[]> {
+  // 1. If the cards are already downloaded, reuse them
+  if (cachedCards !== null){
+    console.log("Using cached cards");
+    return cachedCards;
+  }
+
+  // 2. If no download is running, start over
+  if (cardsPromise === null) {
+    cardsPromise = (async () => {
+      const supabase = createClient();
+      const rows: CardRow[] = [];
+
+      console.log("Fetching cards from Supabase");
+
+      while (true) {
+        const {data,error} = await supabase
+        .from(CARDS_TABLE)
+        .select(CARD_COLUMNS)
+        .order("id")
+        .range(rows.length, rows.length + BATCH_SIZE - 1);
+
+        if (error) {
+          throw new Error(error.message);
+        }
+        rows.push(...((data ?? []) as CardRow[]));
+        
+        if (!data || data.length < BATCH_SIZE){
+          break;
+        }
       }
 
-      return resolved;
-    })
-    .reduce<DeckEntry[]>((acc, curr) => {
-      // if we find our current card in the accumulated deck, increase qty, otherwise push to array
-      let currentCardEntry = acc.find((e) => e.card.id === curr.id);
-      if (currentCardEntry !== undefined) {
-        currentCardEntry.qty += 1;
-      } else {
-        acc.push({
-          card: curr,
-          qty: 1,
-        });
-      }
+      const convertedCards = rows.map(rowToCard);
+      
+      cachedCards =  convertedCards;
 
-      return acc;
-    }, []);
+      console.log(`Cached ${convertedCards.length} cards`);
+
+      return convertedCards;
+
+    })();
+  }
+
+  // 3. wait for the existing download
+  try {
+    return await cardsPromise;
+  } finally {
+    cardsPromise = null;
+  }
 }
+
+function deckRowToCardList(
+  cardMap: Map<string, TcgCard>,
+  row: DeckRow
+): DeckEntry[] {
+  const entries: DeckEntry[] = [];
+
+  for (const cardId of row.cards) {
+    const resolved = cardMap.get(cardId);
+  
+  if (!resolved) continue;
+
+  const existingEntry = entries.find((entry) => entry.card.id === cardId);
+
+  if (existingEntry) {
+    existingEntry.qty += 1;
+  } else {
+    entries.push({ card: resolved, qty: 1});
+  }
+  
+}
+  return entries;
+}
+
 
 // Trainer and Energy cards have no Pokémon type
 const NO_TYPE = "No type";
@@ -206,6 +262,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const parsedDeckId = deckId ? parseInt(deckId) || null : null;
 
   const [cards, setCards] = useState<TcgCard[] | null>(null);
+  const [ownedCards, setOwnedCards] = useState<Map<string, number>>(
+  () => new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const gridTopRef = useRef<HTMLDivElement>(null);
@@ -229,125 +287,201 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
   // Load every card from Supabase, 1000 at a time, when the page opens
   useEffect(() => {
-    const supabase = createClient();
     let cancelled = false;
 
     async function loadAllCards() {
-      const rows: CardRow[] = [];
+      try {
+        setLoadError(null);
 
-      while (true) {
-        const { data, error } = await supabase
-          .from(CARDS_TABLE)
-          .select(CARD_COLUMNS)
-          // Sort by id (unique) so batches never skip or repeat a card
-          .order("id")
-          .range(rows.length, rows.length + BATCH_SIZE - 1);
+        const loadedCards = await getCachedCards();
 
+        // only update react if this effect is still active
         if (cancelled) return;
 
-        if (error) {
-          setLoadError(error.message);
-          return;
-        }
+        setCards(loadedCards);
+        setLoadedSoFar(loadedCards.length);
 
-        rows.push(...((data ?? []) as CardRow[]));
-        setLoadedSoFar(rows.length);
-
-        // A batch smaller than BATCH_SIZE means we reached the end
-        if (!data || data.length < BATCH_SIZE) break;
+      } catch (error) {
+        setLoadError(
+          error instanceof Error ? error.message : "Couldn't load cards"
+        );  
       }
-
-      setCards(rows.map(rowToCard));
     }
-
     loadAllCards();
 
     return () => {
       cancelled = true;
     };
+
   }, []);
+
+    // keep full list of cards
+    const allCards = useMemo(() => cards ?? [], [cards]);
+    // create one Map so saved decks can look up cards quickly 
+    const cardMap = useMemo(
+      () => new Map(allCards.map((card) => [card.id, card])),
+      [allCards]
+    );
+
+    
 
   // Fetch the deck information *after* the cards are fetched. Technically, we could do this before, but that
   // would require rewriting the logic for loading everything, which i do not want to do.
+
+  // Fetch the selected deck when its ID changes
   useEffect(() => {
-    if (cards) {
-      const supabase = createClient();
-      let cancelled = false;
+    if (!cards || currentDeckId === null) return;
 
-      async function fetchDeckInfo() {
-        if (currentDeckId !== null) {
-          const { data, error } = await supabase
-            .from("user_decks")
-            .select("*")
-            .eq("id", currentDeckId)
-            .limit(1)
-            .maybeSingle();
+    const supabase = createClient();
+    let cancelled = false;
 
-          if (cancelled) return;
+    async function fetchDeckInfo() {
+      if (currentDeckId === null) return; 
+      
+      const { data, error } = await supabase
+        .from("user_decks")
+        .select("*")
+        .eq("id", currentDeckId)
+        .limit(1)
+        .maybeSingle();
 
-          if (error) {
-            setLoadError(error.message);
-            return;
-          }
+      if (cancelled) return;
 
-          if (data === null) {
-            console.log("no data?");
-            notFound();
-            return;
-          }
-
-          const deckCards = deckRowToCardList(cards!, data);
-
-          setDeck(deckCards);
-          setDeckName(data.name!);
-          setIsPublic(data.public ?? false);
-        }
+      if (error) {
+        setLoadError(error.message);
+        return;
       }
 
-      async function fetchUserDecks() {
-        const { data: sessionData, error: sessionError } =
-          await supabase.auth.getSession();
-        if (sessionError) {
-          console.log(sessionError.message);
-          return;
-        } else if (sessionData["session"] === null) {
-          return;
-        }
-        const userId = sessionData["session"].user.id;
-
-        const { data, error } = await supabase
-          .from("user_decks")
-          .select("*")
-          .eq("owner_id", userId);
-
-        if (error) {
-          console.log(error.message);
-          return;
-        } else if (data === null) {
-          return;
-        }
-
-        const userDecks: SavedDeck[] = data.map((d) => ({
-          id: d.id,
-          name: d.name!,
-          entries: deckRowToCardList(cards!, d),
-          public: d.public ?? false,
-        }));
-
-        setSavedDecks(userDecks);
+      if (data === null) {
+        notFound();
+        return;
       }
 
-      fetchDeckInfo();
-      fetchUserDecks();
+      const deckCards = deckRowToCardList(cardMap, data);
 
-      return () => {
-        cancelled = true;
-      };
+      setDeck(deckCards);
+      setDeckName(data.name!);
+      setIsPublic(data.public ?? false);
     }
-  }, [cards]);
 
-  const allCards = useMemo(() => cards ?? [], [cards]);
+    fetchDeckInfo();
 
+    return () => {
+      cancelled = true;
+    };
+  }, [cards, cardMap, currentDeckId]);
+
+
+  // Fetch the user's saved decks only when the card catalog loads
+  useEffect(() => {
+    if (!cards) return;
+
+    const supabase = createClient();
+    let cancelled = false;
+
+    async function fetchUserDecks() {
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+
+      if (cancelled) return;
+
+      if (sessionError) {
+        console.log(sessionError.message);
+        return;
+      }
+
+      if (!sessionData.session) return;
+
+      const userId = sessionData.session.user.id;
+
+      const { data, error } = await supabase
+        .from("user_decks")
+        .select("*")
+        .eq("owner_id", userId);
+
+      if (cancelled) return;
+
+      if (error) {
+        console.log(error.message);
+        return;
+      }
+
+      if (!data) return;
+
+      const userDecks: SavedDeck[] = data.map((d) => ({
+        id: d.id,
+        name: d.name!,
+        entries: deckRowToCardList(cardMap, d),
+        public: d.public ?? false,
+      }));
+
+      setSavedDecks(userDecks);
+    }
+
+    fetchUserDecks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cards, cardMap]);
+
+
+useEffect(() => {
+  const supabase = createClient();
+  let cancelled = false;
+
+  async function fetchOwnedCards() {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (cancelled) return;
+
+    if (userError) {
+      console.error("Couldn't get user:", userError.message);
+      return;
+    }
+
+    if (!user) {
+      setOwnedCards(new Map());
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("user_collections")
+      .select("card_id, card_quantity")
+      .eq("user_id", user.id);
+
+    if (cancelled) return;
+
+    if (error) {
+      console.error("Couldn't load collection:", error.message);
+      return;
+    }
+
+    const collectionMap = new Map<string, number>();
+
+  for (const row of data ?? []) {
+  if (row.card_id === null) continue;
+
+  collectionMap.set(
+    row.card_id,
+    Number(row.card_quantity ?? 0)
+  );
+}
+
+    setOwnedCards(collectionMap);
+  }
+
+  fetchOwnedCards();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
+
+ 
   // Build the filter chips from the real data
   const filterGroups: FilterGroup[] = useMemo(
     () => [
@@ -382,9 +516,11 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
   const totalCards = deck.reduce((sum, entry) => sum + entry.qty, 0);
 
-  const ownedInDeck = deck
-    .filter((entry) => entry.card.owned)
-    .reduce((sum, entry) => sum + entry.qty, 0);
+  const ownedInDeck = deck.reduce((sum, entry) => {
+    const quantityOwned = ownedCards.get(entry.card.id) ?? 0;
+
+      return sum + Math.min(entry.qty, quantityOwned);
+    }, 0);
 
   // Any filter change also sends the grid back to page 1
   function changeFilters(update: (prev: Filters) => Filters) {
@@ -423,7 +559,9 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       if (!matchesAny(filters.set, [card.set])) return false;
       if (!matchesAny(filters.finish, card.finishes)) return false;
 
-      if (filters.ownedOnly && !card.owned) return false;
+      if (filters.ownedOnly && (ownedCards.get(card.id) ?? 0) <= 0) {
+        return false;
+      }
 
       return true;
     });
@@ -463,7 +601,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
         a.number.localeCompare(b.number, undefined, { numeric: true })
       );
     });
-  }, [allCards, filters]);
+  }, [allCards, filters, ownedCards]);
 
   // Only render one page of cards at a time so we don't fetch every image at once
   const totalPages = Math.max(1, Math.ceil(visibleCards.length / PAGE_SIZE));
@@ -624,7 +762,16 @@ async function saveDeck() {
   }
 
   async function clearToNewDeck() {
-    await router.push("/builder");
+    setCurrentDeckId(null);
+    setDeckName(NEW_DECK_NAME);
+    setDeck([]);
+    setIsPublic(false);
+    setIsDirty(false);
+    setJustSaved(false);
+    setSelected(null);
+
+    router.push("/builder");
+
   }
 
   function startNewDeck() {
@@ -634,39 +781,44 @@ async function saveDeck() {
     router.push("/builder");
   }
 
-  async function deleteDeck() {
-    const supabase = createClient();
-    if (!currentDeckId) return;
-    if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) return;
 
-    const deckIdToDelete = currentDeckId;
+async function deleteDeck() {
+  if (currentDeckId === null) return;
 
-    const { error } = await supabase
-      .from("user_decks")
-      .delete()
-      .eq("id", deckIdToDelete);
+  if (!window.confirm(`Delete "${deckName}"? This can't be undone.`)) {
+    return;
+  }
 
-    if (error) {
-      console.log(error.message);
-      window.alert("Couldn't delete the deck. Please try again.");
-      return;
+  const supabase = createClient();
+  const deckIdToDelete = currentDeckId;
+
+  const { error } = await supabase
+    .from("user_decks")
+    .delete()
+    .eq("id", deckIdToDelete);
+
+  if (error) {
+    console.log(error.message);
+    window.alert("Couldn't delete the deck. Please try again.");
+    return;
   }
 
   // Remove the deleted deck from My Decks
-    setSavedDecks((prev) =>
-      prev.filter((saved) => saved.id !== deckIdToDelete));
+  setSavedDecks((prev) =>
+    prev.filter((saved) => saved.id !== deckIdToDelete)
+  );
 
-    // Reset the editor
-    setCurrentDeckId(null);
-    setDeckName(NEW_DECK_NAME);
-    setIsPublic(false);
-    setDeck([]);
-    setSelected(null);
-    setIsDirty(false);
-    setJustSaved(false);
+  // Reset the editor
+  setCurrentDeckId(null);
+  setDeckName(NEW_DECK_NAME);
+  setIsPublic(false);
+  setDeck([]);
+  setSelected(null);
+  setIsDirty(false);
+  setJustSaved(false);
 
-    router.push("/builder");
-  }
+  router.push("/builder");
+}
 
   // Little status line under the Save button
   const saveStatus = justSaved
@@ -915,23 +1067,9 @@ async function saveDeck() {
                 changeFilters((prev) => ({
                   ...emptyFilters,
                   search: prev.search,
-                  ownedOnly: prev.ownedOnly,
                 }))
               }
             />
-
-            <button
-              type="button"
-              onClick={() => updateFilter("ownedOnly", !filters.ownedOnly)}
-              aria-pressed={filters.ownedOnly}
-              className={`rounded-xl px-5 py-3 text-base font-medium transition-colors ${
-                filters.ownedOnly
-                  ? "bg-foreground text-background"
-                  : "bg-card text-foreground ring-1 ring-foreground/15 hover:bg-muted"
-              }`}
-            >
-              Owned
-            </button>
           </div>
 
           {/* Result count and clear all */}
@@ -1019,6 +1157,7 @@ async function saveDeck() {
         <CardDetailsModal
           card={selected}
           qty={qtyInDeck(selected.id)}
+          ownedQty={ownedCards.get(selected.id) ?? 0}
           onClose={() => setSelected(null)}
           onAdd={() => addToDeck(selected)}
           disabled={!canAdd(selected.id)}
@@ -1038,6 +1177,7 @@ type FilterGroup = {
   options: string[];
 };
 
+
 function FiltersDropdown({
   filters,
   groups,
@@ -1046,7 +1186,7 @@ function FiltersDropdown({
 }: {
   filters: Filters;
   groups: FilterGroup[];
-  onChange: <K extends FilterKey | "sortOrder">(
+  onChange: <K extends FilterKey | "sortOrder" | "ownedOnly">(
     key: K,
     value: Filters[K],
   ) => void;
@@ -1055,10 +1195,11 @@ function FiltersDropdown({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Total options picked across all groups, plus 1 if the sort was changed
+  // Total selected filters, including Owned
   const activeCount =
     groups.reduce((sum, group) => sum + filters[group.key].length, 0) +
-    (filters.sortOrder !== "az" ? 1 : 0);
+    (filters.sortOrder !== "az" ? 1 : 0) +
+    (filters.ownedOnly ? 1 : 0);
 
   // Add the option if it isn't picked yet, remove it if it is
   function toggleOptions(key: FilterKey, options: string[]) {
@@ -1070,8 +1211,6 @@ function FiltersDropdown({
     if (!open) return;
 
     function onClickOutside(e: MouseEvent) {
-      // Base UI (shadcn base component library) renders things like selects as a
-      // React portal with this data attribute attached.
       const baseUiPortal = document.querySelector("[data-base-ui-portal]");
 
       if (
@@ -1110,13 +1249,17 @@ function FiltersDropdown({
       >
         <SlidersHorizontal className="size-5" />
         Filters
+
         {activeCount > 0 && (
           <span className="flex size-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">
             {activeCount}
           </span>
         )}
+
         <ChevronDown
-          className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`size-4 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
         />
       </Button>
 
@@ -1127,13 +1270,17 @@ function FiltersDropdown({
           aria-label="Card filters"
           className="absolute right-0 z-40 mt-2 max-h-[75vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl"
         >
-          <h2 className="mb-5 text-xl font-semibold">Filter & Sort</h2>
+          <h2 className="mb-5 text-xl font-semibold">
+            Filter & Sort
+          </h2>
+
           <div className="space-y-5">
             {groups.map((group) => (
               <fieldset key={group.key}>
                 <legend className="mb-3 text-base font-medium">
                   {group.label}
                 </legend>
+
                 <div className="flex flex-wrap gap-2">
                   <Select
                     multiple
@@ -1145,6 +1292,7 @@ function FiltersDropdown({
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder={group.label} />
                     </SelectTrigger>
+
                     <SelectContent>
                       {group.options.map((item) => (
                         <SelectItem key={item} value={item}>
@@ -1156,6 +1304,26 @@ function FiltersDropdown({
                 </div>
               </fieldset>
             ))}
+
+            {/* Owned Cards filter */}
+            <div className="flex items-center justify-between gap-3">
+              <label
+                htmlFor="builder-owned-only"
+                className="text-base font-medium"
+              >
+                Owned Cards Only
+              </label>
+
+              <input
+                id="builder-owned-only"
+                type="checkbox"
+                checked={filters.ownedOnly}
+                onChange={(e) =>
+                  onChange("ownedOnly", e.target.checked)
+                }
+                className="h-4 w-4 cursor-pointer accent-primary"
+              />
+            </div>
 
             {/* Sort dropdown */}
             <div className="space-y-2">
@@ -1175,13 +1343,26 @@ function FiltersDropdown({
                 <option value="az">Name: A–Z</option>
                 <option value="za">Name: Z–A</option>
               </select> */}
-              <Select value={filters.sortOrder} onValueChange={(e, v) => onChange("sortOrder", e)}>
+
+              <Select
+                value={filters.sortOrder}
+                onValueChange={(value) => {
+                  if (value !== null) {
+                    onChange("sortOrder", value);
+                  }
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Sort Order" />
                 </SelectTrigger>
+
                 <SelectContent>
-                  <SelectItem key="az" value="az">Name: A-Z</SelectItem>
-                  <SelectItem key="za" value="za">Name: Z-A</SelectItem>
+                  <SelectItem key="az" value="az">
+                    Name: A-Z
+                  </SelectItem>
+                  <SelectItem key="za" value="za">
+                    Name: Z-A
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1212,6 +1393,7 @@ function FiltersDropdown({
     </div>
   );
 }
+
 
 // ---- Page numbers under the grid ----
 
@@ -1325,15 +1507,18 @@ function DeckProgress({ total }: { total: number }) {
 
 // ---- Card details modal ----
 
+
 function CardDetailsModal({
   card,
   qty,
+  ownedQty,
   onClose,
   onAdd,
   disabled,
 }: {
   card: TcgCard;
   qty: number;
+  ownedQty: number;
   onClose: () => void;
   onAdd: () => void;
   disabled: boolean;
@@ -1359,7 +1544,7 @@ function CardDetailsModal({
     { label: "Number", value: card.number },
     { label: "Finish", value: card.finishes.join(" / ") || "Normal" },
     { label: "Price", value: card.price },
-    { label: "Owned", value: card.owned ? "Yes" : "No" },
+    { label: "Owned", value: ownedQty > 0 ? `Yes (${ownedQty})` : "No" },
     {
       label: "In this deck",
       value: `${qty} / ${COPY_LIMIT}`,
