@@ -121,14 +121,14 @@ async function getCachedCards(): Promise<TcgCard[]> {
           throw new Error(error.message);
         }
         rows.push(...((data ?? []) as CardRow[]));
-        
+
         if (!data || data.length < BATCH_SIZE){
           break;
         }
       }
 
       const convertedCards = rows.map(rowToCard);
-      
+
       cachedCards =  convertedCards;
 
       console.log(`Cached ${convertedCards.length} cards`);
@@ -154,7 +154,7 @@ function deckRowToCardList(
 
   for (const cardId of row.cards) {
     const resolved = cardMap.get(cardId);
-  
+
   if (!resolved) continue;
 
   const existingEntry = entries.find((entry) => entry.card.id === cardId);
@@ -164,7 +164,7 @@ function deckRowToCardList(
   } else {
     entries.push({ card: resolved, qty: 1});
   }
-  
+
 }
   return entries;
 }
@@ -265,6 +265,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const [ownedCards, setOwnedCards] = useState<Map<string, number>>(
   () => new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [deckNotFound, setDeckNotFound] = useState<boolean>(false);
   const [page, setPage] = useState(1);
   const gridTopRef = useRef<HTMLDivElement>(null);
 
@@ -285,6 +286,10 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
   const [loadedSoFar, setLoadedSoFar] = useState(0);
 
+  if (deckNotFound) {
+    notFound();
+  }
+
   // Load every card from Supabase, 1000 at a time, when the page opens
   useEffect(() => {
     let cancelled = false;
@@ -304,7 +309,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       } catch (error) {
         setLoadError(
           error instanceof Error ? error.message : "Couldn't load cards"
-        );  
+        );
       }
     }
     loadAllCards();
@@ -317,13 +322,13 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
     // keep full list of cards
     const allCards = useMemo(() => cards ?? [], [cards]);
-    // create one Map so saved decks can look up cards quickly 
+    // create one Map so saved decks can look up cards quickly
     const cardMap = useMemo(
       () => new Map(allCards.map((card) => [card.id, card])),
       [allCards]
     );
 
-    
+
 
   // Fetch the deck information *after* the cards are fetched. Technically, we could do this before, but that
   // would require rewriting the logic for loading everything, which i do not want to do.
@@ -336,8 +341,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     let cancelled = false;
 
     async function fetchDeckInfo() {
-      if (currentDeckId === null) return; 
-      
+      if (currentDeckId === null) return;
+
       const { data, error } = await supabase
         .from("user_decks")
         .select("*")
@@ -353,7 +358,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       }
 
       if (data === null) {
-        notFound();
+        // has to be a state for react because the error boundary of useEffect won't propagate
+        setDeckNotFound(true);
         return;
       }
 
@@ -481,7 +487,7 @@ useEffect(() => {
   };
 }, []);
 
- 
+
   // Build the filter chips from the real data
   const filterGroups: FilterGroup[] = useMemo(
     () => [
@@ -933,7 +939,7 @@ async function deleteDeck() {
                 isSaving ||
                 deck.length === 0 ||
                 (currentDeckId !== null && !isDirty)
-              } 
+              }
               >
               {isSaving ? (
                 <>
