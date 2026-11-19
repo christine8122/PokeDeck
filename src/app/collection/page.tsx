@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Minus, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
+import {
+  ChevronDown,
+  Minus,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import Container from "@/components/custom/Container";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
@@ -20,14 +28,26 @@ import {
   type CardRow,
   type TcgCard,
 } from "@/lib/tcg-cards";
+import { Tables } from "@/lib/supabase/database.types";
 
-// Starting collection: just the Base Set Pikachu.
-// The id is a real TCGdex card id (set-number) so the card image loads.
-const placeholderCards: TcgCard[] = [
-  { id: "base1-58", name: "Pikachu", price: "—", set: "base1", number: "#58", finish: "Normal", rarity: "Common", owned: true, types: ["Lightning"], qty: 1, hp: 40, stage: "Basic" },
+type TcgCardFromCollection = Tables<"user_collections"> & {
+  cards: Tables<"cards">;
+};
+
+const TYPES = [
+  "All",
+  "Grass",
+  "Fire",
+  "Water",
+  "Lightning",
+  "Psychic",
+  "Fighting",
+  "Darkness",
+  "Metal",
+  "Dragon",
+  "Colorless",
+  "Fairy",
 ];
-
-const TYPES = ["All", "Grass", "Fire", "Water", "Lightning", "Psychic", "Fighting", "Darkness", "Metal", "Dragon", "Colorless", "Fairy"];
 const BASE_RARITIES = ["Common", "Uncommon", "Rare", "Rare Holo"];
 const BASE_FINISHES = ["Normal", "Holo", "Reverse Holo"];
 
@@ -69,7 +89,7 @@ function getCardColor(types: string[]) {
 export default function CollectionPage() {
   // The collection lives in page state for now, so it resets on refresh.
   // TODO: save it to a Supabase table for the logged-in user.
-  const [collection, setCollection] = useState<TcgCard[]>(placeholderCards);
+  const [collection, setCollection] = useState<TcgCard[]>([]);
   const [showAddCards, setShowAddCards] = useState(false);
   const [selected, setSelected] = useState<TcgCard | null>(null);
   const [search, setSearch] = useState("");
@@ -84,7 +104,11 @@ export default function CollectionPage() {
   useEffect(() => {
     if (!showFilters) return;
     function closeOutside(event: MouseEvent) {
-      if (filtersRef.current && !filtersRef.current.contains(event.target as Node)) setShowFilters(false);
+      if (
+        filtersRef.current &&
+        !filtersRef.current.contains(event.target as Node)
+      )
+        setShowFilters(false);
     }
     function closeEscape(event: KeyboardEvent) {
       if (event.key === "Escape") setShowFilters(false);
@@ -97,49 +121,164 @@ export default function CollectionPage() {
     };
   }, [showFilters]);
 
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+
+    const fetchUserCollection = async () => {
+      if (cancelled) return;
+      const { data, error } = await supabase
+        .from("user_collections")
+        .select("*, cards!inner(*)");
+
+      if (error !== null) {
+        console.log(error.message);
+        return;
+      }
+
+      const translatedCollection = data.map((c) => {
+        const collectionCard = rowToCollectionCard(c.cards);
+        collectionCard.qty = c.card_quantity;
+
+        return collectionCard;
+      });
+
+      setCollection(translatedCollection);
+    };
+
+    fetchUserCollection();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Filter options come from what's actually in the collection
-  const RARITIES = withExtras(BASE_RARITIES, collection.map((card) => card.rarity));
-  const FINISHES = withExtras(BASE_FINISHES, collection.map((card) => card.finish));
+  const RARITIES = withExtras(
+    BASE_RARITIES,
+    collection.map((card) => card.rarity),
+  );
+  const FINISHES = withExtras(
+    BASE_FINISHES,
+    collection.map((card) => card.finish),
+  );
   const SETS = ["All", ...new Set(collection.map((card) => card.set))];
 
   const qtyInCollection = (id: string) =>
     collection.find((card) => card.id === id)?.qty ?? 0;
 
   // Add one copy: bump the count if you already own it, otherwise add it
-  function addToCollection(card: TcgCard) {
+  async function addToCollection(card: TcgCard) {
+    const supabase = createClient();
+
+    // we need our own id to perform an upsert because we are the owner of the row
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.log(sessionError.message);
+      return;
+    }
+    if (!sessionData.session) return;
+
+    const userId = sessionData.session.user.id;
+
+    // grab the card if it exists, if it doesn't, then default to the card info we have.
+    // then add 1 to the quantity
+    const cardInCollection = collection.find((c) => c.id === card.id);
+    if (cardInCollection) {
+      cardInCollection.qty += 1;
+    }
+    const resolvedCard = cardInCollection || card;
+
+    await supabase.from("user_collections").upsert({
+      card_id: resolvedCard.id,
+      card_quantity: resolvedCard.qty,
+      user_id: userId,
+    });
+
     setCollection((previous) =>
       previous.some((owned) => owned.id === card.id)
         ? previous.map((owned) =>
-            owned.id === card.id ? { ...owned, qty: owned.qty + 1 } : owned
+            owned.id === card.id ? { ...owned, qty: resolvedCard.qty } : owned,
           )
-        : [...previous, { ...card, qty: 1, owned: true }]
+        : [...previous, { ...card, qty: resolvedCard.qty, owned: true }],
     );
   }
 
   // Remove one copy. At zero copies the card leaves the collection.
-  function removeOneFromCollection(id: string) {
-    if (qtyInCollection(id) <= 1) setSelected(null);
+  async function removeOneFromCollection(id: string) {
+    const supabase = createClient();
+
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.log(sessionError.message);
+      return;
+    }
+    if (!sessionData.session) return;
+
+    const userId = sessionData.session.user.id;
+
+    if (qtyInCollection(id) <= 1) {
+      // if we have <=1, delete from the database
+      await supabase
+        .from("user_collections")
+        .delete()
+        .eq("user_id", userId)
+        .eq("card_id", id);
+
+      setSelected(null);
+    } else {
+      // otherwise we need to get the currentQty and remove one (update)
+      await supabase
+        .from("user_collections")
+        .update({
+          card_quantity: qtyInCollection(id) - 1,
+        })
+        .eq("user_id", userId)
+        .eq("card_id", id);
+    }
     setCollection((previous) =>
       previous
-        .map((owned) => (owned.id === id ? { ...owned, qty: owned.qty - 1 } : owned))
-        .filter((owned) => owned.qty > 0)
+        .map((owned) =>
+          owned.id === id ? { ...owned, qty: owned.qty - 1 } : owned,
+        )
+        .filter((owned) => owned.qty > 0),
     );
   }
 
   const filteredCards = collection.filter((card) => {
-    const matchesSearch = card.name.toLowerCase().includes(search.trim().toLowerCase());
-    const matchesType = selectedType === "All" || card.types.includes(selectedType);
-    const matchesFinish = selectedFinish === "All" || card.finish === selectedFinish;
-    const matchesRarity = selectedRarity === "All" || card.rarity === selectedRarity;
+    const matchesSearch = card.name
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
+    const matchesType =
+      selectedType === "All" || card.types.includes(selectedType);
+    const matchesFinish =
+      selectedFinish === "All" || card.finish === selectedFinish;
+    const matchesRarity =
+      selectedRarity === "All" || card.rarity === selectedRarity;
     const matchesSet = selectedSet === "All" || card.set === selectedSet;
-    return matchesSearch && matchesType && matchesFinish && matchesRarity && matchesSet;
+    return (
+      matchesSearch &&
+      matchesType &&
+      matchesFinish &&
+      matchesRarity &&
+      matchesSet
+    );
   });
 
   const visibleCards = [...filteredCards].sort((a, b) =>
-    sortOrder === "za" ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)
+    sortOrder === "za"
+      ? b.name.localeCompare(a.name)
+      : a.name.localeCompare(b.name),
   );
 
-  const activeCount = [selectedType, selectedFinish, selectedRarity, selectedSet].filter((v) => v !== "All").length + (sortOrder !== "az" ? 1 : 0);
+  const activeCount =
+    [selectedType, selectedFinish, selectedRarity, selectedSet].filter(
+      (v) => v !== "All",
+    ).length + (sortOrder !== "az" ? 1 : 0);
 
   function clearFilters() {
     setSearch("");
@@ -150,14 +289,17 @@ export default function CollectionPage() {
     setSortOrder("az");
   }
 
-  const selectClass = "w-full rounded-md border border-border bg-background p-3 text-base";
+  const selectClass =
+    "w-full rounded-md border border-border bg-background p-3 text-base";
 
   return (
     <Container>
       <div className="space-y-8 py-6">
         <header>
           <h1 className="text-6xl font-bold">My Collection</h1>
-          <p className="mt-2 text-2xl text-muted-foreground">Browse your Pokemon cards.</p>
+          <p className="mt-2 text-2xl text-muted-foreground">
+            Browse your Pokemon cards.
+          </p>
         </header>
 
         <section>
@@ -203,8 +345,14 @@ export default function CollectionPage() {
                 onClick={() => setShowFilters((previous) => !previous)}
               >
                 <SlidersHorizontal className="size-5" /> Filters
-                {activeCount > 0 && <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">{activeCount}</span>}
-                <ChevronDown className={`size-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
+                {activeCount > 0 && (
+                  <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                    {activeCount}
+                  </span>
+                )}
+                <ChevronDown
+                  className={`size-4 transition-transform ${showFilters ? "rotate-180" : ""}`}
+                />
               </Button>
 
               {showFilters && (
@@ -221,7 +369,9 @@ export default function CollectionPage() {
                         <Button
                           key={type}
                           type="button"
-                          variant={selectedType === type ? "default" : "outline"}
+                          variant={
+                            selectedType === type ? "default" : "outline"
+                          }
                           aria-pressed={selectedType === type}
                           className="px-3 py-2 text-base"
                           onClick={() => setSelectedType(type)}
@@ -234,41 +384,108 @@ export default function CollectionPage() {
 
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label htmlFor="collection-rarity" className="text-base font-medium">Rarity</label>
-                      <select id="collection-rarity" value={selectedRarity} onChange={(e) => setSelectedRarity(e.target.value)} className={selectClass}>
-                        {RARITIES.map((rarity) => <option key={rarity} value={rarity}>{rarity === "All" ? "All rarities" : rarity}</option>)}
+                      <label
+                        htmlFor="collection-rarity"
+                        className="text-base font-medium"
+                      >
+                        Rarity
+                      </label>
+                      <select
+                        id="collection-rarity"
+                        value={selectedRarity}
+                        onChange={(e) => setSelectedRarity(e.target.value)}
+                        className={selectClass}
+                      >
+                        {RARITIES.map((rarity) => (
+                          <option key={rarity} value={rarity}>
+                            {rarity === "All" ? "All rarities" : rarity}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label htmlFor="collection-set" className="text-base font-medium">Set</label>
-                      <select id="collection-set" value={selectedSet} onChange={(e) => setSelectedSet(e.target.value)} className={selectClass}>
-                        {SETS.map((set) => <option key={set} value={set}>{set === "All" ? "All sets" : set}</option>)}
+                      <label
+                        htmlFor="collection-set"
+                        className="text-base font-medium"
+                      >
+                        Set
+                      </label>
+                      <select
+                        id="collection-set"
+                        value={selectedSet}
+                        onChange={(e) => setSelectedSet(e.target.value)}
+                        className={selectClass}
+                      >
+                        {SETS.map((set) => (
+                          <option key={set} value={set}>
+                            {set === "All" ? "All sets" : set}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label htmlFor="collection-finish" className="text-base font-medium">Finish</label>
-                      <select id="collection-finish" value={selectedFinish} onChange={(e) => setSelectedFinish(e.target.value)} className={selectClass}>
-                        {FINISHES.map((finish) => <option key={finish} value={finish}>{finish === "All" ? "All finishes" : finish}</option>)}
+                      <label
+                        htmlFor="collection-finish"
+                        className="text-base font-medium"
+                      >
+                        Finish
+                      </label>
+                      <select
+                        id="collection-finish"
+                        value={selectedFinish}
+                        onChange={(e) => setSelectedFinish(e.target.value)}
+                        className={selectClass}
+                      >
+                        {FINISHES.map((finish) => (
+                          <option key={finish} value={finish}>
+                            {finish === "All" ? "All finishes" : finish}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label htmlFor="collection-sort" className="text-base font-medium">Sort by</label>
-                      <select id="collection-sort" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className={selectClass}>
+                      <label
+                        htmlFor="collection-sort"
+                        className="text-base font-medium"
+                      >
+                        Sort by
+                      </label>
+                      <select
+                        id="collection-sort"
+                        value={sortOrder}
+                        onChange={(e) => setSortOrder(e.target.value)}
+                        className={selectClass}
+                      >
                         <option value="az">Name: A–Z</option>
                         <option value="za">Name: Z–A</option>
                       </select>
                     </div>
                   </div>
                   <div className="mt-6 flex gap-3 border-t border-border pt-4">
-                    <Button type="button" variant="outline" className="flex-1 text-base" onClick={clearFilters}>Clear filters</Button>
-                    <Button type="button" className="flex-1 text-base" onClick={() => setShowFilters(false)}>Done</Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1 text-base"
+                      onClick={clearFilters}
+                    >
+                      Clear filters
+                    </Button>
+                    <Button
+                      type="button"
+                      className="flex-1 text-base"
+                      onClick={() => setShowFilters(false)}
+                    >
+                      Done
+                    </Button>
                   </div>
                 </aside>
               )}
             </div>
           </div>
 
-          <p className="mb-5 text-xl text-muted-foreground">Showing {visibleCards.length} of {collection.length} cards</p>
+          <p className="mb-5 text-xl text-muted-foreground">
+            Showing {visibleCards.length} of {collection.length} cards
+          </p>
 
           {/* No sidebar on this page, so 4 across on big screens keeps the cards from getting huge */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -285,8 +502,12 @@ export default function CollectionPage() {
 
           {visibleCards.length === 0 && (
             <div className="py-10 text-center">
-              <p className="mb-3 text-lg text-muted-foreground">No cards match your search or filters.</p>
-              <Button type="button" variant="outline" onClick={clearFilters}>Clear filters</Button>
+              <p className="mb-3 text-lg text-muted-foreground">
+                No cards match your search or filters.
+              </p>
+              <Button type="button" variant="outline" onClick={clearFilters}>
+                Clear filters
+              </Button>
             </div>
           )}
         </section>
@@ -328,7 +549,9 @@ function CardDetailsModal({
   const cardColor = getCardColor(card.types);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -344,24 +567,55 @@ function CardDetailsModal({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <Card role="dialog" aria-modal="true" aria-label={`${card.name} details`} className="max-h-[90vh] w-full max-w-xl overflow-y-auto pt-0 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className={`flex items-center justify-between px-5 py-4 text-black ${cardColor}`}>
-          <CardTitle className="text-xl font-extrabold uppercase tracking-wide">{card.name}</CardTitle>
-          <Button type="button" variant="ghost" size="icon-sm" className="text-black" aria-label="Close" onClick={onClose}><X /></Button>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${card.name} details`}
+        className="max-h-[90vh] w-full max-w-xl overflow-y-auto pt-0 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className={`flex items-center justify-between px-5 py-4 text-black ${cardColor}`}
+        >
+          <CardTitle className="text-xl font-extrabold uppercase tracking-wide">
+            {card.name}
+          </CardTitle>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="text-black"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
         </div>
         <CardContent className="grid gap-5 sm:grid-cols-[180px_1fr]">
-          <CardImage card={card} className="flex h-56 items-center justify-center rounded-lg bg-muted text-base font-semibold text-muted-foreground" />
+          <CardImage
+            card={card}
+            className="flex h-56 items-center justify-center rounded-lg bg-muted text-base font-semibold text-muted-foreground"
+          />
           <div>
             <dl className="space-y-3 text-base">
               {details.map((detail) => (
-                <div key={detail.label} className="flex justify-between gap-4 border-b border-border pb-1">
+                <div
+                  key={detail.label}
+                  className="flex justify-between gap-4 border-b border-border pb-1"
+                >
                   <dt className="text-muted-foreground">{detail.label}</dt>
                   <dd className="text-right font-medium">{detail.value}</dd>
                 </div>
               ))}
             </dl>
-            <p className="pt-4 text-base text-muted-foreground">Placeholder description. Card text, attacks, and prices will go here.</p>
+            <p className="pt-4 text-base text-muted-foreground">
+              Placeholder description. Card text, attacks, and prices will go
+              here.
+            </p>
           </div>
         </CardContent>
         <CardFooter className="flex-wrap justify-between gap-3">
@@ -371,17 +625,35 @@ function CardDetailsModal({
               type="button"
               variant="outline"
               size="icon"
-              aria-label={qty <= 1 ? `Remove ${card.name} from collection` : `Remove one ${card.name}`}
+              aria-label={
+                qty <= 1
+                  ? `Remove ${card.name} from collection`
+                  : `Remove one ${card.name}`
+              }
               onClick={onRemoveOne}
             >
-              {qty <= 1 ? <Trash2 className="size-4" /> : <Minus className="size-4" />}
+              {qty <= 1 ? (
+                <Trash2 className="size-4" />
+              ) : (
+                <Minus className="size-4" />
+              )}
             </Button>
-            <span className="min-w-8 text-center text-lg font-semibold">{qty}</span>
-            <Button type="button" variant="outline" size="icon" aria-label={`Add one ${card.name}`} onClick={onAdd}>
+            <span className="min-w-8 text-center text-lg font-semibold">
+              {qty}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label={`Add one ${card.name}`}
+              onClick={onAdd}
+            >
               <Plus className="size-4" />
             </Button>
           </div>
-          <Button type="button" variant="outline" onClick={onClose}>Close</Button>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Close
+          </Button>
         </CardFooter>
       </Card>
     </div>
@@ -411,7 +683,9 @@ function AddCardsModal({
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TcgCard[]>([]);
-  const [status, setStatus] = useState<"idle" | "searching" | "done" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "searching" | "done" | "error">(
+    "idle",
+  );
   const [errorMessage, setErrorMessage] = useState("");
   const latestSearch = useRef(0);
 
@@ -420,7 +694,9 @@ function AddCardsModal({
 
   // Close on Escape
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -475,7 +751,10 @@ function AddCardsModal({
   }, [trimmed, tooShort]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8"
+      onClick={onClose}
+    >
       <Card
         role="dialog"
         aria-modal="true"
@@ -485,7 +764,15 @@ function AddCardsModal({
       >
         <div className="flex items-center justify-between px-5">
           <CardTitle className="text-2xl font-bold">Add cards</CardTitle>
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}><X /></Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
         </div>
 
         <CardContent className="space-y-5">
@@ -501,7 +788,12 @@ function AddCardsModal({
               className="w-full rounded-lg border border-border bg-card py-3 pl-12 pr-10 text-lg shadow-sm outline-none focus:ring-2 focus:ring-pink-300"
             />
             {query && (
-              <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              >
                 <X className="size-5" />
               </button>
             )}
@@ -540,7 +832,9 @@ function AddCardsModal({
         </CardContent>
 
         <CardFooter className="justify-end">
-          <Button type="button" onClick={onClose}>Done</Button>
+          <Button type="button" onClick={onClose}>
+            Done
+          </Button>
         </CardFooter>
       </Card>
     </div>
