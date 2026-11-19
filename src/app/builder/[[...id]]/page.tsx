@@ -265,6 +265,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const [ownedCards, setOwnedCards] = useState<Map<string, number>>(
   () => new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [deckNotFound, setDeckNotFound] = useState<boolean>(false);
   const [page, setPage] = useState(1);
   const gridTopRef = useRef<HTMLDivElement>(null);
 
@@ -284,6 +285,10 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
   const [isSaving, setIsSaving] = useState(false); // tracks whether a deck is being saved
 
   const [loadedSoFar, setLoadedSoFar] = useState(0);
+
+  if (deckNotFound) {
+    notFound();
+  }
 
   // Load every card from Supabase, 1000 at a time, when the page opens
   useEffect(() => {
@@ -353,7 +358,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       }
 
       if (data === null) {
-        notFound();
+        // has to be a state for react because the error boundary of useEffect won't propagate
+        setDeckNotFound(true);
         return;
       }
 
