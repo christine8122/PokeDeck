@@ -44,7 +44,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { notFound, useRouter } from "next/navigation";
-import { DeckRow } from "@/lib/supabase/types";
+import { Tables } from "@/lib/supabase/database.types";
 
 
 // ---- Supabase settings ----
@@ -121,14 +121,14 @@ async function getCachedCards(): Promise<TcgCard[]> {
           throw new Error(error.message);
         }
         rows.push(...((data ?? []) as CardRow[]));
-        
+
         if (!data || data.length < BATCH_SIZE){
           break;
         }
       }
 
       const convertedCards = rows.map(rowToCard);
-      
+
       cachedCards =  convertedCards;
 
       console.log(`Cached ${convertedCards.length} cards`);
@@ -148,13 +148,13 @@ async function getCachedCards(): Promise<TcgCard[]> {
 
 function deckRowToCardList(
   cardMap: Map<string, TcgCard>,
-  row: DeckRow
+  row: Tables<'user_decks'>
 ): DeckEntry[] {
   const entries: DeckEntry[] = [];
 
   for (const cardId of row.cards) {
     const resolved = cardMap.get(cardId);
-  
+
   if (!resolved) continue;
 
   const existingEntry = entries.find((entry) => entry.card.id === cardId);
@@ -164,7 +164,7 @@ function deckRowToCardList(
   } else {
     entries.push({ card: resolved, qty: 1});
   }
-  
+
 }
   return entries;
 }
@@ -304,7 +304,7 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
       } catch (error) {
         setLoadError(
           error instanceof Error ? error.message : "Couldn't load cards"
-        );  
+        );
       }
     }
     loadAllCards();
@@ -317,13 +317,13 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
     // keep full list of cards
     const allCards = useMemo(() => cards ?? [], [cards]);
-    // create one Map so saved decks can look up cards quickly 
+    // create one Map so saved decks can look up cards quickly
     const cardMap = useMemo(
       () => new Map(allCards.map((card) => [card.id, card])),
       [allCards]
     );
 
-    
+
 
   // Fetch the deck information *after* the cards are fetched. Technically, we could do this before, but that
   // would require rewriting the logic for loading everything, which i do not want to do.
@@ -336,8 +336,8 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
     let cancelled = false;
 
     async function fetchDeckInfo() {
-      if (currentDeckId === null) return; 
-      
+      if (currentDeckId === null) return;
+
       const { data, error } = await supabase
         .from("user_decks")
         .select("*")
@@ -481,7 +481,7 @@ useEffect(() => {
   };
 }, []);
 
- 
+
   // Build the filter chips from the real data
   const filterGroups: FilterGroup[] = useMemo(
     () => [
@@ -933,7 +933,7 @@ async function deleteDeck() {
                 isSaving ||
                 deck.length === 0 ||
                 (currentDeckId !== null && !isDirty)
-              } 
+              }
               >
               {isSaving ? (
                 <>
