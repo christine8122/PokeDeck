@@ -46,6 +46,8 @@ import {
 import { notFound, useRouter } from "next/navigation";
 import { Tables } from "@/lib/supabase/database.types";
 
+import { CopyDeckLinkButton } from "./copy-link";
+
 
 // ---- Supabase settings ----
 
@@ -352,6 +354,12 @@ export default function BuilderPage(props: PageProps<"/builder/[[...id]]">) {
 
       if (cancelled) return;
 
+      console.log("Shared deck lookup",{
+        deckId: currentDeckId,
+        foundDeck: data != null,
+        error: error?.message,
+      });
+      
       if (error) {
         setLoadError(error.message);
         return;
@@ -825,6 +833,8 @@ async function deleteDeck() {
 
   router.push("/builder");
 }
+const savedDeck = savedDecks.find((saved) => saved.id === currentDeckId);
+
 
   // Little status line under the Save button
   const saveStatus = justSaved
@@ -876,6 +886,13 @@ async function deleteDeck() {
                     }`}
                   />
                 </button>
+                  {savedDeck?.public && isPublic && (
+                    <CopyDeckLinkButton
+                      key={savedDeck.id}
+                      shareUrl={"/builder/" + savedDeck.id}
+                      />
+                  )}
+                
               </div>
 
               <p className="text-sm text-muted-foreground">
